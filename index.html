@@ -172,6 +172,15 @@
   .heart.empty path{ fill:#2c2f36; stroke:rgba(255,255,255,0.15); stroke-width:6; }
   .heart.full path{ fill:#e5493f; stroke:#7c1f1a; stroke-width:6; }
 
+  #oxygen{ display:flex; flex-direction:row-reverse; gap:3px; }
+  .bubble{
+    width:14px; height:14px; position:relative;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));
+  }
+  .bubble svg{ width:100%; height:100%; display:block; }
+  .bubble.empty{ opacity:0.3; }
+  .bubble.full{ opacity:1; }
+
   #vignette{
     position:fixed; inset:0; pointer-events:none; z-index:5;
     background: radial-gradient(ellipse at center, rgba(200,20,20,0) 55%, rgba(180,10,10,0.55) 100%);
@@ -379,6 +388,7 @@
       <kbd>Right click</kbd><span><b>Place</b> the selected block — walk over drops to restock it</span>
       <kbd>1–6</kbd><span><b>Select</b> a block from the hotbar</span>
       <kbd>7 / 8</kbd><span><b>Equip</b> the sword or bow, once crafted</span>
+      <kbd>9</kbd><span><b>Torch</b> — craft it, then place it for light</span>
       <kbd>C</kbd><span><b>Craft</b> tools from raw materials</span>
       <kbd>T / Enter</kbd><span><b>Chat</b> with other players</span>
       <kbd>Tab</kbd><span>Hold to see the <b>ranking</b></span>
@@ -444,7 +454,7 @@
   </div>
   <div id="bottomStack">
     <div id="foodInv" hidden></div>
-    <div id="vitals"><div id="hearts"></div><div id="hunger"></div></div>
+    <div id="vitals"><div id="hearts"></div><div id="hunger"></div><div id="oxygen" hidden></div></div>
     <div id="hotbar"></div>
   </div>
 </div>
@@ -465,9 +475,9 @@
 var SIZE = 44;                // island footprint (SIZE x SIZE)
 var SEA_LEVEL = 4;             // top y of water surface
 var MAX_H = 13;
-var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves"];
-var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves"};
-var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a"};
+var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch"];
+var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
+var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -764,7 +774,7 @@ window.addEventListener("resize", function(){
 });
 
 /* ---------- procedural texture atlas ---------- */
-var CELL = 32, COLS = 4, ROWS = 2;
+var CELL = 32, COLS = 4, ROWS = 3;
 var atlasCanvas = document.createElement("canvas");
 atlasCanvas.width = CELL*COLS; atlasCanvas.height = CELL*ROWS;
 var actx = atlasCanvas.getContext("2d");
@@ -785,7 +795,8 @@ function clamp255(v){ return Math.max(0,Math.min(255, v|0)); }
 
 var CELLS = {
   grass_top:[0,0], grass_side:[1,0], dirt:[2,0], stone:[3,0],
-  sand:[0,1], wood_top:[1,1], wood_side:[2,1], leaves:[3,1]
+  sand:[0,1], wood_top:[1,1], wood_side:[2,1], leaves:[3,1],
+  torch:[0,2]
 };
 
 speckle(CELLS.grass_top[0],CELLS.grass_top[1], [96,168,72], 14);
@@ -841,13 +852,39 @@ speckle(CELLS.grass_side[0],CELLS.grass_side[1], [122,84,52], 12, function(x,y,a
   }
 })();
 
+// torch: stick with flame top
+(function(){
+  var ox = CELLS.torch[0]*CELL, oy = CELLS.torch[1]*CELL;
+  for(var y=0;y<CELL;y++){
+    for(var x=0;x<CELL;x++){
+      var v=(Math.random()*2-1)*8;
+      if(y < 20){
+        var base=[92,62,38];
+        actx.fillStyle="rgb("+clamp255(base[0]+v)+","+clamp255(base[1]+v*0.6)+","+clamp255(base[2]+v)+")";
+      }else{
+        var fx = Math.abs(x - CELL/2) / (CELL/2);
+        var fy = (y - 20) / 12;
+        var flameIntensity = Math.max(0, 1 - fx*1.2 - fy*0.8);
+        if(flameIntensity > 0.3){
+          var r = 255, g = 160 + Math.random()*40, b = 30 + Math.random()*50;
+          actx.fillStyle="rgb("+clamp255(r)+","+clamp255(g)+","+clamp255(b)+")";
+        }else{
+          actx.fillStyle="rgba(0,0,0,0)";
+        }
+      }
+      actx.fillRect(ox+x,oy+y,1,1);
+    }
+  }
+})();
+
 var atlasTexture = new THREE.CanvasTexture(atlasCanvas);
 atlasTexture.magFilter = THREE.NearestFilter;
 atlasTexture.minFilter = THREE.NearestFilter;
 atlasTexture.wrapS = THREE.ClampToEdgeWrapping;
 atlasTexture.wrapT = THREE.ClampToEdgeWrapping;
 
-var atlasMaterial = new THREE.MeshLambertMaterial({map:atlasTexture});
+var atlasMaterial = new THREE.MeshLambertMaterial({map:atlasTexture, alphaTest:0.5});
+var torchMaterial = new THREE.MeshLambertMaterial({map:atlasTexture, alphaTest:0.5, side:THREE.DoubleSide});
 
 /* remap default box UVs (each face already spans 0..1) into an atlas cell */
 function remapFaceUV(geo, faceIndex, cellKey){
@@ -874,13 +911,47 @@ function buildBlockGeometry(px,nx,py,ny,pz,nz){
   return geo;
 }
 
+function buildTorchGeometry(){
+  var geo = new THREE.BufferGeometry();
+  var w = 0.1, h = 0.8;
+  var verts = new Float32Array([
+    -w, 0, 0,  w, 0, 0,  -w, h, 0,
+     w, 0, 0,  w, h, 0,  -w, h, 0,
+    0, 0, -w,  0, 0, w,  0, h, -w,
+    0, 0, w,   0, h, w,  0, h, -w,
+  ]);
+  var uvs = new Float32Array([
+    0,0, 1,0, 0,1,  1,0, 1,1, 0,1,
+    0,0, 1,0, 0,1,  1,0, 1,1, 0,1,
+  ]);
+  var norms = new Float32Array([
+    0,0,1, 0,0,1, 0,0,1,  0,0,-1, 0,0,-1, 0,0,-1,
+    1,0,0, 1,0,0, 1,0,0,  -1,0,0, -1,0,0, -1,0,0,
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts,3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(uvs,2));
+  geo.setAttribute("normal", new THREE.BufferAttribute(norms,3));
+  var cell = CELLS.torch;
+  var u0 = cell[0]/COLS, v0 = 1 - (cell[1]+1)/ROWS;
+  var cw = 1/COLS, ch = 1/ROWS;
+  var inset = 0.4/CELL;
+  for(var i=0;i<uvs.length/2;i++){
+    var u = uvs[i*2], v = uvs[i*2+1];
+    uvs[i*2] = u0 + inset + u*(cw-2*inset);
+    uvs[i*2+1] = v0 + inset + v*(ch-2*inset);
+  }
+  geo.attributes.uv.needsUpdate = true;
+  return geo;
+}
+
 var GEOMETRY = {
   grass: buildBlockGeometry("grass_side","grass_side","grass_top","dirt","grass_side","grass_side"),
   dirt:  buildBlockGeometry("dirt","dirt","dirt","dirt","dirt","dirt"),
   stone: buildBlockGeometry("stone","stone","stone","stone","stone","stone"),
   sand:  buildBlockGeometry("sand","sand","sand","sand","sand","sand"),
   wood:  buildBlockGeometry("wood_side","wood_side","wood_top","wood_top","wood_side","wood_side"),
-  leaves:buildBlockGeometry("leaves","leaves","leaves","leaves","leaves","leaves")
+  leaves:buildBlockGeometry("leaves","leaves","leaves","leaves","leaves","leaves"),
+  torch: buildTorchGeometry()
 };
 
 /* ---------- world data ---------- */
@@ -956,7 +1027,7 @@ BLOCK_TYPES.forEach(function(t){
   var count = 0;
   blockAt.forEach(function(v){ if(v===t) count++; });
   var maxCount = count + 400;
-  var mesh = new THREE.InstancedMesh(GEOMETRY[t], atlasMaterial, Math.max(maxCount,1));
+  var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : atlasMaterial, Math.max(maxCount,1));
   mesh.count = 0;
   scene.add(mesh);
   typeData[t] = { mesh:mesh, positions:[], posToIndex:new Map() };
@@ -986,6 +1057,7 @@ blockAt.forEach(function(type, k){
 BLOCK_TYPES.forEach(function(t){ typeData[t].mesh.instanceMatrix.needsUpdate = true; });
 
 /* live add / remove keeping instance arrays dense */
+var torchLights = new Map();
 function addBlock(type, x,y,z){
   var k = key(x,y,z);
   if(blockAt.has(k)) return false;
@@ -995,6 +1067,12 @@ function addBlock(type, x,y,z){
   td.mesh.instanceMatrix.needsUpdate = true;
   blockAt.set(k, type);
   mmDirty[x+","+z] = [x,z];
+  if(type === "torch"){
+    var light = new THREE.PointLight(0xffaa33, 1.2, 8);
+    light.position.set(x+0.5, y+0.8, z+0.5);
+    scene.add(light);
+    torchLights.set(k, light);
+  }
   return true;
 }
 function removeBlock(x,y,z){
@@ -1017,6 +1095,10 @@ function removeBlock(x,y,z){
   td.mesh.instanceMatrix.needsUpdate = true;
   blockAt.delete(k);
   mmDirty[x+","+z] = [x,z];
+  if(type === "torch"){
+    var light = torchLights.get(k);
+    if(light){ scene.remove(light); torchLights.delete(k); }
+  }
   return type;
 }
 
@@ -1049,8 +1131,9 @@ var player = {
   dead: false
 };
 
+function solidKey(k){ var t = blockAt.get(k); return !!t && t !== "torch"; }
 function isSolid(x,y,z){
-  return blockAt.has(key(Math.floor(x),Math.floor(y),Math.floor(z)));
+  return solidKey(key(Math.floor(x),Math.floor(y),Math.floor(z)));
 }
 
 function collideAxis(axis, delta){
@@ -1072,7 +1155,7 @@ function collideAxis(axis, delta){
       var yi = (back && axis==="y") ? y1-b : y0+b;
       for(var c=0; c<nzc; c++){
         var zi = (back && axis==="z") ? z1-c : z0+c;
-        if(blockAt.has(key(xi,yi,zi))){
+        if(solidKey(key(xi,yi,zi))){
           if(axis==="x"){
             return delta>0 ? xi-hw-p.x : (xi+1)+hw-p.x;
           } else if(axis==="y"){
@@ -1107,9 +1190,10 @@ function updateHearts(){
 /* ---------- hunger and food ---------- */
 var HUNGER_MAX = 20;
 var hunger = HUNGER_MAX, starveTimer = 0, regenTimer = 0, lastHungerKey = -1;
-var food = { pork:0, flesh:0 };
+var food = { pork:0, beef:0, flesh:0 };
 var FOODS = {
   pork:  { label:"Pork",  value:6, color:0xf0a5a0 },
+  beef:  { label:"Beef",  value:8, color:0xc04030 },
   flesh: { label:"Flesh", value:3, color:0x7b9440 }
 };
 var hungerEl = document.getElementById("hunger");
@@ -1122,6 +1206,28 @@ for(var di=0; di<10; di++){
   drumEl.innerHTML = DRUM_BG + DRUM_FG;
   hungerEl.appendChild(drumEl);
 }
+
+/* ---------- oxygen ---------- */
+var OXYGEN_MAX = 20, drownTimer = 0;
+var oxygen = OXYGEN_MAX, lastOxygenKey = -1;
+var oxygenEl = document.getElementById("oxygen");
+var BUBBLE_BG = '<svg class="bg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="rgba(20,22,26,0.5)" stroke="rgba(100,200,255,0.4)" stroke-width="1.2"/></svg>';
+var BUBBLE_FG = '<svg class="fg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="rgba(100,200,255,0.7)" stroke="rgba(200,230,255,0.9)" stroke-width="1"/></svg>';
+for(var bi=0; bi<10; bi++){
+  var bubbleEl = document.createElement("div");
+  bubbleEl.className = "bubble full";
+  bubbleEl.innerHTML = BUBBLE_BG + BUBBLE_FG;
+  oxygenEl.appendChild(bubbleEl);
+}
+function updateOxygenUI(){
+  Array.prototype.forEach.call(oxygenEl.children, function(el, i){
+    var v = oxygen - i*2;
+    el.className = "bubble " + (v >= 2 ? "full" : "empty");
+  });
+  lastOxygenKey = Math.round(oxygen*2);
+  oxygenEl.hidden = oxygen >= OXYGEN_MAX;
+}
+updateOxygenUI();
 function updateHungerUI(){
   Array.prototype.forEach.call(hungerEl.children, function(el, i){
     var v = hunger - i*2;
@@ -1130,13 +1236,13 @@ function updateHungerUI(){
   lastHungerKey = Math.round(hunger*2);
 }
 function updateFoodInv(){
-  if(food.pork + food.flesh <= 0){ foodInvEl.hidden = true; return; }
+  if(food.pork + food.beef + food.flesh <= 0){ foodInvEl.hidden = true; return; }
   foodInvEl.hidden = false;
-  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat";
+  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat";
 }
 function eatFood(){
   if(player.dead || hunger >= HUNGER_MAX - 0.5) return false;
-  var t = food.pork > 0 ? "pork" : (food.flesh > 0 ? "flesh" : null);
+  var t = food.beef > 0 ? "beef" : (food.pork > 0 ? "pork" : (food.flesh > 0 ? "flesh" : null));
   if(!t) return false;
   food[t]--;
   hunger = Math.min(HUNGER_MAX, hunger + FOODS[t].value);
@@ -1201,6 +1307,7 @@ function killPlayer(){
     player.dead = false;
     deathCard.hidden = true;
     hunger = HUNGER_MAX; starveTimer = 0; regenTimer = 0;
+    oxygen = OXYGEN_MAX; updateOxygenUI();
     airPeakY = player.pos.y;
     updateHearts();
     updateHungerUI();
@@ -1212,7 +1319,7 @@ function killPlayer(){
 function groundHeightAt(x,z){
   var xi=Math.floor(x), zi=Math.floor(z);
   for(var y=MAX_H+21; y>=0; y--){
-    if(blockAt.has(key(xi,y,zi))) return y+1;
+    if(solidKey(key(xi,y,zi))) return y+1;
   }
   return -1;
 }
@@ -1338,7 +1445,7 @@ function spawnAnimal(){
   if(blockAt.get(key(Math.floor(x), gy-1, Math.floor(z))) !== "grass") return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
   var kind = Math.random() < 0.5 ? "pig" : "cow";
-  createMob(nextMobId++, x, gy, z, kind === "pig" ? 4 : 6, kind);
+  createMob(nextMobId++, x, gy, z, kind === "pig" ? 15 : 25, kind);
 }
 
 function removeMob(mob){
@@ -1373,8 +1480,9 @@ function damageMob(mob, amount, dirX, dirZ, byPeer){
       if(Math.random()<0.4) loot.push(MOB_LOOT[Math.floor(Math.random()*MOB_LOOT.length)]);
       if(Math.random()<0.65) loot.push("flesh");
     } else {
-      loot = ["pork"];
-      if(Math.random()<0.5) loot.push("pork");
+      var isCow = mob.kind === "cow";
+      loot = [isCow ? "beef" : "pork"];
+      if(Math.random()<0.5) loot.push(isCow ? "beef" : "pork");
     }
     if(byPeer && net.room){
       net.room.emit("mobdie", {to:byPeer, k:hostile?1:0, loot:loot, x:Math.round(mob.x*100)/100, y:Math.round(mob.y*100)/100, z:Math.round(mob.z*100)/100}).catch(function(){});
@@ -1511,7 +1619,8 @@ function updateMonsters(dt, now){
     var nx = mob.x + moveX*mob.speed*dt;
     var nz = mob.z + moveZ*mob.speed*dt;
     var ngy = groundHeightAt(nx,nz);
-    if(ngy>=SEA_LEVEL && Math.abs(ngy-mob.y)<=1 && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5){
+    var maxDrop = 3;
+    if(ngy>=SEA_LEVEL && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5){
       mob.x=nx; mob.z=nz; mob.y=ngy;
     } else {
       mob.wanderAngle = Math.random()*Math.PI*2;
@@ -1545,7 +1654,7 @@ window.addEventListener("keydown", function(e){
   if(e.code==="KeyC" && !player.dead && (locked||craftOpen)){ toggleCraft(); return; }
   if(craftOpen) return;
   var n = e.key;
-  if(n>="1" && n<="8"){ selectSlot(+n-1); }
+  if(n>="1" && n<="9"){ selectSlot(+n-1); }
 });
 window.addEventListener("keyup", function(e){ keys[e.code]=false; if(e.code==="Tab") showBoard(false); });
 window.addEventListener("blur", function(){ showBoard(false); keys = {}; });
@@ -1606,10 +1715,11 @@ var ITEMS = [
   {id:"grass", kind:"block"}, {id:"dirt", kind:"block"}, {id:"stone", kind:"block"},
   {id:"sand", kind:"block"}, {id:"wood", kind:"block"}, {id:"leaves", kind:"block"},
   {id:"sword", kind:"weapon", label:"Sword", damage:9, range:4.6, cooldown:380, ranged:false, icon:SWORD_ICON},
-  {id:"bow", kind:"weapon", label:"Bow", damage:6, range:7, cooldown:650, ranged:true, icon:BOW_ICON}
+  {id:"bow", kind:"weapon", label:"Bow", damage:6, range:7, cooldown:650, ranged:true, icon:BOW_ICON},
+  {id:"torch", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0};
 var unlocked = {sword:false, bow:false};
 var arrowCount = 0;
 
@@ -1683,7 +1793,9 @@ var RECIPES = [
   { id:"bow", label:"Bow", desc:"Ranged weapon — needs arrows to fire", icon:BOW_ICON,
     cost:{wood:3, leaves:2}, once:true, apply:function(){ unlocked.bow = true; } },
   { id:"arrows", label:"Arrows ×5", desc:"Ammo for the bow", icon:ARROW_ICON,
-    cost:{wood:1, stone:1}, once:false, apply:function(){ arrowCount += 5; } }
+    cost:{wood:1, stone:1}, once:false, apply:function(){ arrowCount += 5; } },
+  { id:"torch", label:"Torch ×4", desc:"Placeable light source", icon:'<svg class="item" viewBox="0 0 24 24"><rect x="11" y="4" width="2" height="14" fill="#8b5a2b"/><path d="M12 4 L8 1 L12 1 L16 4" fill="#ff8800"/></svg>',
+    cost:{wood:1, leaves:1}, once:false, apply:function(){ inventory.torch += 4; } }
 ];
 
 var craftOpen = false;
@@ -1861,7 +1973,7 @@ function updateArrows(dt, now){
         var dx = a.mesh.position.x-mob.x, dy = a.mesh.position.y-(mob.y+0.8), dz = a.mesh.position.z-mob.z;
         if(dx*dx+dy*dy+dz*dz < 0.45*0.45){ hitMob = mob; break; }
       }
-      blocked = blockAt.has(key(Math.floor(a.mesh.position.x), Math.floor(a.mesh.position.y), Math.floor(a.mesh.position.z)));
+      blocked = solidKey(key(Math.floor(a.mesh.position.x), Math.floor(a.mesh.position.y), Math.floor(a.mesh.position.z)));
     }
     if(hitMob){
       var len = Math.hypot(a.vel.x,a.vel.z)||1;
@@ -2519,7 +2631,7 @@ var mmTerrain = document.createElement("canvas");
 mmTerrain.width = MM_SIZE * mmDpr; mmTerrain.height = MM_SIZE * mmDpr;
 var mmTerrainCtx = mmTerrain.getContext("2d");
 var mmLast = 0;
-var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52] };
+var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51] };
 
 function mmPaintColumn(x, z){
   var top = -1, type = null;
@@ -2828,7 +2940,7 @@ var airPeakY = 0, waterTick = 0, wasInWater = false;
 function isInWater(){
   var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z), fy = Math.floor(player.pos.y + 0.3);
   if(fx < 0 || fx >= SIZE || fz < 0 || fz >= SIZE || fy >= SEA_LEVEL || fy < 0) return false;
-  if(blockAt.has(key(fx,fy,fz))) return false;
+  if(solidKey(key(fx,fy,fz))) return false;
   return heightMap[fx*SIZE+fz] < SEA_LEVEL;
 }
 
@@ -2906,15 +3018,18 @@ function update(dt){
     airPeakY = player.pos.y;
     if(!wasInWater){
       sfx.play("splash");
-      waterTick = 0;
-      if(!player.dead) damagePlayer(2, 0, 0, true);
     }
-    waterTick += dt;
-    if(waterTick >= 1){
-      waterTick -= 1;
-      if(!player.dead) damagePlayer(1, 0, 0, true);
-    }
+    oxygen = Math.max(0, oxygen - dt * 1.5);   // 20 units ≈ 13 s of air
+    if(oxygen <= 0){
+      drownTimer += dt;
+      if(drownTimer >= 1){ drownTimer -= 1; if(!player.dead) damagePlayer(1, 0, 0, true); }
+    } else drownTimer = 0;
+    oxygenEl.hidden = false;
+  } else {
+    oxygen = Math.min(OXYGEN_MAX, oxygen + dt * 8);
+    if(oxygen >= OXYGEN_MAX) oxygenEl.hidden = true;
   }
+  if(Math.round(oxygen*2) !== lastOxygenKey) updateOxygenUI();
   wasInWater = swimming;
   updateVitals(dt);
 
@@ -2990,7 +3105,7 @@ function savePlayer(){
   if(d.inv && typeof d.inv === "object") BLOCK_TYPES.forEach(function(t){ inventory[t] = Math.floor(num(d.inv[t], 0, 9999, inventory[t])); });
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
   arrowCount = Math.floor(num(d.arrows, 0, 9999, 0));
-  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); }
+  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); }
   hunger = num(d.hunger, 0, HUNGER_MAX, HUNGER_MAX);
   player.hp = (typeof d.hp === "number" && d.hp >= 1) ? Math.min(player.maxHp, Math.round(d.hp)) : player.maxHp;
   if(Array.isArray(d.pos)){
