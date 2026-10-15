@@ -341,6 +341,9 @@
   }
 
   /* touch controls */
+  #mineBar{ position:fixed; left:50%; top:calc(50% + 22px); width:64px; height:6px; transform:translateX(-50%); z-index:5; pointer-events:none;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.6); border-radius:3px; overflow:hidden; }
+  #mineFill{ height:100%; width:0; background:#ffd76a; }
   #touchUI{ display:none; --sb:env(safe-area-inset-bottom,0px); --sr:env(safe-area-inset-right,0px); --st:env(safe-area-inset-top,0px); }
   body.touch.playing #touchUI{ display:block; }
   body.touch #logo, body.touch #hint{ display:none; }
@@ -400,7 +403,8 @@
     <div class="controls tcontrols">
       <b>Left stick</b><span><b>Move</b> — drag anywhere on the left side</span>
       <b>Drag</b><span><b>Look</b> around with the right side of the screen</span>
-      <b>⛏</b><span><b>Break</b> / swing / fire — hold to repeat, drag to aim</span>
+      <b>Tap</b><span><b>Place</b> the selected block where you tap</span>
+      <b>⛏</b><span><b>Break</b> (hold until it crumbles) / swing / fire — drag to aim</span>
       <b>🧱</b><span><b>Place</b> the selected block</span>
       <b>⬆</b><span><b>Jump</b> (hold to swim up)</span>
       <b>🔨 / 🍖</b><span><b>Craft</b> tools, <b>eat</b> when hungry</span>
@@ -466,6 +470,7 @@
   <p class="note" id="boardNote">Hold Tab to view. Kills count first, then blocks placed.</p>
 </div>
 <div id="crosshair"></div>
+<div id="mineBar" hidden><div id="mineFill"></div></div>
 
 <script>
 (function(){
@@ -1324,6 +1329,24 @@ function groundHeightAt(x,z){
   return -1;
 }
 
+/* mobs walk on terrain only: treat wood/leaves as obstacles, never as ground (no spawning or climbing on trees) */
+function isTreeBlock(t){ return t === "wood" || t === "leaves" || t === "torch"; }
+function terrainHeightAt(x,z){
+  var xi=Math.floor(x), zi=Math.floor(z);
+  for(var y=MAX_H+21; y>=0; y--){
+    var t = blockAt.get(key(xi,y,zi));
+    if(t && !isTreeBlock(t)) return y+1;
+  }
+  return -1;
+}
+function treeBlocks(x,z,gy){
+  var xi=Math.floor(x), zi=Math.floor(z);
+  for(var dy=0; dy<2; dy++){
+    var t = blockAt.get(key(xi,gy+dy,zi));
+    if(t === "wood" || t === "leaves") return true;
+  }
+  return false;
+}
 var mobBodyMat = new THREE.MeshLambertMaterial({color:0x4c8a46});
 var mobHeadMat = new THREE.MeshLambertMaterial({color:0x3f7a3a});
 var mobLimbMat = new THREE.MeshLambertMaterial({color:0x2a3a24});
@@ -1382,7 +1405,7 @@ function makeAnimalMesh(kind){
 }
 
 var monsters = [];
-var MAX_MOBS = 8;
+var MAX_MOBS = 10, CRAWLER_HP = 24, CRAWLER_DMG = 4;
 var ANIMAL_TARGET = 5;
 var lastAnimalSpawn = 0;
 var mobHitMeshes = [];
@@ -1402,7 +1425,7 @@ function createMob(id, x, y, z, health, kind){
     wanderTimer: 0,
     lastAttack: 0,
     walkPhase: Math.random()*10,
-    speed: kind === "crawler" ? 1.7 + Math.random()*0.5 : 0.9 + Math.random()*0.4
+    speed: kind === "crawler" ? 2.3 + Math.random()*0.7 : 0.9 + Math.random()*0.4
   };
   group.traverse(function(o){ if(o.isMesh){ o.userData.mob = mob; mobHitMeshes.push(o); } });
   monsters.push(mob);
@@ -1432,16 +1455,16 @@ function spawnMob(){
   var x = tg.x + Math.cos(angle)*dist;
   var z = tg.z + Math.sin(angle)*dist;
   if(x<2 || x>SIZE-2 || z<2 || z>SIZE-2) return;
-  var gy = groundHeightAt(x,z);
-  if(gy < SEA_LEVEL) return;
+  var gy = terrainHeightAt(x,z);
+  if(gy < SEA_LEVEL || treeBlocks(x,z,gy)) return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
-  createMob(nextMobId++, x, gy, z, 6);
+  createMob(nextMobId++, x, gy, z, CRAWLER_HP);
 }
 
 function spawnAnimal(){
   var x = 3 + Math.random()*(SIZE-6), z = 3 + Math.random()*(SIZE-6);
-  var gy = groundHeightAt(x,z);
-  if(gy < SEA_LEVEL + 1) return;
+  var gy = terrainHeightAt(x,z);
+  if(gy < SEA_LEVEL + 1 || treeBlocks(x,z,gy)) return;
   if(blockAt.get(key(Math.floor(x), gy-1, Math.floor(z))) !== "grass") return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
   var kind = Math.random() < 0.5 ? "pig" : "cow";
@@ -1564,16 +1587,19 @@ function updateAnimal(mob, dt, now){
   var moving = false;
   if(moveX || moveZ){
     var nx = mob.x + moveX*sp*dt, nz = mob.z + moveZ*sp*dt;
-    var ngy = groundHeightAt(nx, nz);
-    if(ngy >= SEA_LEVEL+1 && Math.abs(ngy-mob.y) <= 1 && nx>2 && nx<SIZE-2 && nz>2 && nz<SIZE-2){
+    var ngy = terrainHeightAt(nx, nz);
+    if(ngy >= SEA_LEVEL+1 && !treeBlocks(nx, nz, ngy) && Math.abs(ngy-mob.y) <= 1 && nx>2 && nx<SIZE-2 && nz>2 && nz<SIZE-2){
       mob.x = nx; mob.z = nz; mob.y = ngy; moving = true;
+      mob.faceAngle = Math.atan2(moveX, moveZ);
     } else {
-      mob.wanderAngle = Math.random()*Math.PI*2;
-      mob.wanderTimer = 1;
+      /* blocked: stop, then turn away once (re-rolling the angle every frame made animals spin) */
+      mob.wanderAngle = Math.atan2(-moveZ, -moveX) + (Math.random()-0.5)*1.6;
+      mob.wanderTimer = 0.5 + Math.random()*0.5;
+      mob.idle = true;
       mob.fleeUntil = 0;
     }
-    mob.group.rotation.y = Math.atan2(moveX, moveZ);
   }
+  if(mob.faceAngle !== undefined) mob.group.rotation.y = angleLerp(mob.group.rotation.y, mob.faceAngle, Math.min(1, dt*8));
   mob.group.position.set(mob.x, mob.y, mob.z);
   animateMobLimbs(mob, dt, moving);
 }
@@ -1618,9 +1644,9 @@ function updateMonsters(dt, now){
     }
     var nx = mob.x + moveX*mob.speed*dt;
     var nz = mob.z + moveZ*mob.speed*dt;
-    var ngy = groundHeightAt(nx,nz);
+    var ngy = terrainHeightAt(nx,nz);
     var maxDrop = 3;
-    if(ngy>=SEA_LEVEL && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5){
+    if(ngy>=SEA_LEVEL && !treeBlocks(nx,nz,ngy) && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5){
       mob.x=nx; mob.z=nz; mob.y=ngy;
     } else {
       mob.wanderAngle = Math.random()*Math.PI*2;
@@ -1630,10 +1656,10 @@ function updateMonsters(dt, now){
     if(moveX||moveZ) mob.group.rotation.y = Math.atan2(moveX,moveZ);
     animateMobLimbs(mob, dt, true);
 
-    if(tg && distToTarget < 1.15 && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 1.8) && now-mob.lastAttack > 900){
+    if(tg && distToTarget < 1.15 && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 1.8) && now-mob.lastAttack > 750){
       mob.lastAttack = now;
-      if(tg.peer === null) damagePlayer(2, dxp, dzp);
-      else if(net.room) net.room.emit("pdmg", {to:tg.peer, amt:2, dx:Math.round(dxp*100)/100, dz:Math.round(dzp*100)/100}).catch(function(){});
+      if(tg.peer === null) damagePlayer(CRAWLER_DMG, dxp, dzp);
+      else if(net.room) net.room.emit("pdmg", {to:tg.peer, amt:CRAWLER_DMG, dx:Math.round(dxp*100)/100, dz:Math.round(dzp*100)/100}).catch(function(){});
     }
   });
 }
@@ -1859,8 +1885,8 @@ function closeCraft(){
 }
 function toggleCraft(){ if(craftOpen) closeCraft(); else openCraft(); }
 
-function raycastBlock(){
-  raycaster.setFromCamera({x:0,y:0}, camera);
+function raycastBlock(ndc){
+  raycaster.setFromCamera(ndc || {x:0,y:0}, camera);
   raycaster.far = 6;
   var hits = raycaster.intersectObjects(solidMeshes);
   if(!hits.length) return null;
@@ -2068,23 +2094,12 @@ function doPrimary(){
     damageMob(mob, dmg, dx/len, dz/len);
     return;
   }
-  var hit = raycastBlock();
-  if(hit){
-    lastAttackTime = now;
-    triggerSwing();
-    var removedType = removeBlock(hit.x, hit.y, hit.z);
-    if(removedType){
-      spawnDrop(removedType, hit.x+0.5, hit.y+0.5, hit.z+0.5);
-      sfx.play("break", {v:removedType});
-      netEdit(hit.x, hit.y, hit.z, null);
-    }
-  }
 }
-function doSecondary(){
+function doSecondary(ndc){
   if(!locked || player.dead) return;
   var item = currentItem();
   if(item.kind!=="block" || (inventory[item.id]||0)<=0) return;
-  var hit2 = raycastBlock();
+  var hit2 = raycastBlock(ndc);
   if(!hit2) return;
   var nx = hit2.x+hit2.normal.x, ny = hit2.y+hit2.normal.y, nz = hit2.z+hit2.normal.z;
   var px = player.pos, hw = player.halfW;
@@ -2103,12 +2118,52 @@ function doSecondary(){
   }
 }
 renderer.domElement.addEventListener("mousedown", function(e){
-  if(e.button===0) doPrimary();
+  if(e.button===0){ primaryHeld = true; doPrimary(); }
   else if(e.button===2) doSecondary();
 });
+window.addEventListener("mouseup", function(e){ if(e.button===0) primaryHeld = false; });
+window.addEventListener("blur", function(){ primaryHeld = false; });
 renderer.domElement.addEventListener("contextmenu", function(e){ e.preventDefault(); });
 var lastAttackTime = 0;
 selectSlot(0);
+
+/* ---------- mining: blocks take time to break, so a single click never removes one ---------- */
+var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4};
+var primaryHeld = false;
+var mine = { x:0, y:0, z:0, t:0, active:false, swing:0 };
+var mineBarEl = document.getElementById("mineBar"), mineFillEl = document.getElementById("mineFill");
+function resetMining(){
+  if(mine.active){ mine.active = false; mine.t = 0; mineBarEl.hidden = true; }
+}
+function updateMining(dt){
+  var item = currentItem();
+  if(!locked || player.dead || (item.kind === "weapon" && item.ranged)){ resetMining(); return; }
+  raycaster.far = item.kind === "weapon" ? item.range : FIST.range;
+  var mob = raycastMob();
+  raycaster.far = 6;
+  if(mob){ resetMining(); return; }
+  var hit = raycastBlock();
+  if(!hit){ resetMining(); return; }
+  if(!mine.active || mine.x !== hit.x || mine.y !== hit.y || mine.z !== hit.z){
+    mine.x = hit.x; mine.y = hit.y; mine.z = hit.z; mine.t = 0; mine.active = true; mine.swing = 0;
+  }
+  var type = blockAt.get(key(hit.x, hit.y, hit.z));
+  var need = (HARDNESS[type] || 1) / (item.id === "sword" ? 1.3 : 1);
+  mine.t += dt;
+  mine.swing -= dt;
+  if(mine.swing <= 0){ mine.swing = 0.32; triggerSwing(); }
+  mineBarEl.hidden = false;
+  mineFillEl.style.width = Math.min(100, mine.t/need*100) + "%";
+  if(mine.t >= need){
+    var removedType = removeBlock(hit.x, hit.y, hit.z);
+    resetMining();
+    if(removedType){
+      spawnDrop(removedType, hit.x+0.5, hit.y+0.5, hit.z+0.5);
+      sfx.play("break", {v:removedType});
+      netEdit(hit.x, hit.y, hit.z, null);
+    }
+  }
+}
 
 /* ---------- touch controls ---------- */
 (function(){
@@ -2157,7 +2212,15 @@ selectSlot(0);
     player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
     lx = e.clientX; ly = e.clientY;
   }
-  bindDrag($("tLook"), lookStart, lookMove, null);
+  var tapT = 0, tapX = 0, tapY = 0, tapMoved = 0;
+  bindDrag($("tLook"), function(e){ lookStart(e); tapT = performance.now(); tapX = e.clientX; tapY = e.clientY; tapMoved = 0; },
+    function(e){ tapMoved = Math.max(tapMoved, Math.hypot(e.clientX - tapX, e.clientY - tapY)); lookMove(e); },
+    function(e){
+      /* a short tap (not a drag) places the selected block on the face that was tapped */
+      if(tapMoved < 10 && performance.now() - tapT < 300){
+        doSecondary({ x: e.clientX / innerWidth * 2 - 1, y: -(e.clientY / innerHeight * 2 - 1) });
+      }
+    });
 
   /* floating move stick */
   var ox = 0, oy = 0;
@@ -3049,7 +3112,7 @@ function animate(){
   var dt = Math.min(clock.getDelta(), 0.05);
   var now = performance.now();
   adaptResolution(dt);
-  if(tAttackHeld) doPrimary();
+  if(tAttackHeld || primaryHeld){ doPrimary(); updateMining(dt); } else resetMining();
   update(dt);
   updateWeather(dt);
   updateSky(dt);
