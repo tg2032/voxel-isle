@@ -612,6 +612,8 @@ scene.add(stars);
 
 /* ---------- day/night cycle ---------- */
 var DAY_LENGTH = 180; // seconds for one full day/night cycle
+var caveDark = 0;       // 0 = open sky above, 1 = roofed in (caves): the world goes dark and only torches light it
+var CAVE_COL = new THREE.Color(0x05060a);
 var dayElapsed = 6/24*DAY_LENGTH; // start around 6am
 var SKY_NIGHT = new THREE.Color(0x0b1026);
 var SKY_DAWN  = new THREE.Color(0xf5a35c);
@@ -771,6 +773,16 @@ function updateSky(dt){
   var fogF = Math.max(weather.rain, cl*0.35);
   scene.fog.near = 28 - 18*fogF;
   scene.fog.far  = 70 - 30*fogF;
+  if(caveDark > 0.001){
+    var cd = caveDark;
+    sky.lerp(CAVE_COL, cd*0.97);
+    sunLight.intensity *= (1 - cd);
+    moonLight.intensity *= (1 - cd);
+    hemiLight.intensity *= (1 - 0.9*cd);
+    ambientFill.intensity += 0.14*cd;          // just enough to make out shapes
+    scene.fog.near = scene.fog.near + (3 - scene.fog.near)*cd;
+    scene.fog.far  = scene.fog.far  + (22 - scene.fog.far)*cd;
+  }
   scene.background = sky;
   scene.fog.color = sky;
 
@@ -1186,7 +1198,7 @@ function updateTorchLights(dt, now){
     }
   }
   for(var m=0; m<TORCH_POOL; m++){
-    if(torchPool[m].userData.on) torchPool[m].intensity = 1.25 + Math.sin(now*0.012 + m*1.7)*0.12;
+    if(torchPool[m].userData.on) torchPool[m].intensity = (1.25 + Math.sin(now*0.012 + m*1.7)*0.12) * (1 + 1.1*caveDark);   // torches matter most in the dark
   }
 }
 function addBlock(type, x,y,z){
@@ -3299,6 +3311,21 @@ function isInLava(){
   var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
   return blockAt.get(key(fx, Math.floor(player.pos.y+0.2), fz)) === "lava" || blockAt.get(key(fx, Math.floor(player.pos.y+1.0), fz)) === "lava";
 }
+var caveScanT = 0, caveTarget = 0, caveToldDark = false;
+function updateCaveDark(dt){
+  caveScanT -= dt;
+  if(caveScanT <= 0){
+    caveScanT = 0.2;
+    var x = Math.floor(player.pos.x), z = Math.floor(player.pos.z), blocked = false;
+    for(var y = Math.floor(player.pos.y + 2); y <= MAX_H + 22; y++){
+      var t = blockAt.get(key(x,y,z));
+      if(t && !isTreeBlock(t)){ blocked = true; break; }   // trees do not count as a roof
+    }
+    caveTarget = blocked ? 1 : 0;
+    if(blocked && !caveToldDark && caveDark > 0.5){ caveToldDark = true; showToast("It's dark down here \u2014 place torches"); }
+  }
+  caveDark += (caveTarget - caveDark) * Math.min(1, dt*2.5);
+}
 var lavaTick = 0, lavaScanT = 0, lavaWarnT = 0;
 function warnNearLava(dt){
   lavaScanT -= dt; lavaWarnT -= dt;
@@ -3404,6 +3431,7 @@ function update(dt){
   if(Math.round(oxygen*2) !== lastOxygenKey) updateOxygenUI();
   wasInWater = swimming;
   if(!inLava && !player.dead) warnNearLava(dt);
+  updateCaveDark(dt);
   if(inLava && !player.dead){
     lavaTick += dt;
     if(lavaTick >= 0.5){ lavaTick = 0; damagePlayer(3, 0, 0, true, "lava"); }
