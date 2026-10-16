@@ -1040,6 +1040,20 @@ function lowestNeighbour(x,z){
   }
   return m;
 }
+/* winding tunnels where two noise fields cross; never above the dirt layer and never near the lava floor */
+function caveAt(x,y,z,h){
+  if(y < 4 || y > h-5) return false;
+  var a = valueNoise(x*0.13 + y*0.37 + 11, z*0.13 - y*0.21 + 5);
+  var b = valueNoise(x*0.11 - y*0.29 + 70, z*0.12 + y*0.33 + 31);
+  return Math.abs(a-0.5) < 0.1 && Math.abs(b-0.5) < 0.1;
+}
+/* a few sinkholes: a shaft from the surface down into a cave, so the tunnels can be found without digging */
+function lowestCaveY(x,z,h){ for(var y=4; y<=h-5; y++) if(caveAt(x,y,z,h)) return y; return -1; }
+function sinkFrom(x,z,h){
+  if(h < 10 || Math.hypot(x-SIZE/2, z-SIZE/2) < 6) return -1;   // never at the spawn point
+  if(hash2(x*7.77 + 3.3, z*5.55 + 9.1) < 0.92) return -1;
+  return lowestCaveY(x,z,h);
+}
 function oreAt(x,y,z,h){
   if(y <= 2 && h >= 9 && lowestNeighbour(x,z) >= 5 && valueNoise(x*0.33 + y*2.1, z*0.33 + 40) > 0.7) return "lava";
   var r = hash2(x*3.17 + y*5.31, z*2.71 + y*7.13);
@@ -1060,15 +1074,17 @@ for(var x=0;x<SIZE;x++){
     var h = heightMap[x*SIZE+z];
     if(h<=0) continue;
     var beach = h <= SEA_LEVEL+1;
+    var sinkY = sinkFrom(x,z,h);
     for(var y=0;y<h;y++){
       var t;
-      if(y === 0) t = "bedrock";
-      else if(y < h-4) t = oreAt(x,y,z,h);
+      if(sinkY >= 0 && y >= sinkY) t = null;
+      else if(y === 0) t = "bedrock";
+      else if(y < h-4) t = caveAt(x,y,z,h) ? null : oreAt(x,y,z,h);
       else if(y < h-1) t = "dirt";
       else t = beach ? "sand" : "grass";
-      blockAt.set(key(x,y,z), t);
+      if(t) blockAt.set(key(x,y,z), t);
     }
-    if(!beach && h>SEA_LEVEL+2 && worldRand()<0.02 &&
+    if(!beach && h>SEA_LEVEL+2 && worldRand()<0.02 && sinkY < 0 &&
        x>2 && x<SIZE-3 && z>2 && z<SIZE-3){
       treeSpots.push([x,h,z]);
     }
@@ -3025,7 +3041,7 @@ var sfx = (function(){
   var pill = document.getElementById("sndPill");
   try{ muted = localStorage.getItem("voxelMuted") === "1"; }catch(e){}
   pill.hidden = !muted;
-  var MIN_GAP = {thunder:800, eat:200, splash:400, animal:120, step:110, "break":50, hit:40, place:50, pickup:40, growl:700, cricket:120, bird:700, chat:100, mobhurt:60};
+  var MIN_GAP = {thunder:800, eat:200, splash:400, animal:120, step:110, "break":50, hit:40, place:50, pickup:40, growl:700, cricket:120, bird:700, chat:100, mobhurt:60, bubble:250};
 
   function ensure(){
     if(ctx) return ctx;
@@ -3097,6 +3113,16 @@ var sfx = (function(){
       noise({dur:0.14, vol:0.5*k, type:"lowpass", f:hard?2600:(wood?1100:1500), f2:hard?500:280, dest:d});
       if(hard) noise({dur:0.05, vol:0.25*k, type:"highpass", f:2600, dest:d});
       tone({f:wood?160:(hard?220:120), f2:60, dur:0.1, type:wood?"square":"triangle", vol:0.26*k, lp:650, dest:d});
+      if(v === "gold_ore" || v === "diamond_ore"){   // a bright chime for ore
+        var base = v === "diamond_ore" ? 1318 : 988;
+        tone({f:base, dur:0.22, vol:0.2*k, delay:0.05, dest:d});
+        tone({f:base*1.5, dur:0.3, vol:0.16*k, delay:0.13, dest:d});
+      }
+    },
+    bubble: function(d, v, k){
+      var b = 90 + Math.random()*70;
+      tone({f:b, f2:b*2.2, dur:0.12, type:"sine", vol:0.18*k, lp:500, dest:d});
+      noise({dur:0.18, vol:0.08*k, type:"lowpass", f:380, f2:140, dest:d});
     },
     place: function(d, v, k){
       tone({f:200, f2:85, dur:0.09, type:"triangle", vol:0.34*k, lp:800, dest:d});
@@ -3218,9 +3244,14 @@ var sfx = (function(){
   };
 })();
 
-var amb = { bird:0, cricket:0, growl:0, animal:0 };
+var amb = { bird:0, cricket:0, growl:0, animal:0, lava:0 };
+var lavaNear = false;
 function updateAmbient(now){
   if(!locked || player.dead) return;
+  if(lavaNear && now > amb.lava){
+    amb.lava = now + 900 + Math.random()*1500;
+    sfx.play("bubble", {g:0.8 + Math.random()*0.4});
+  }
   if(currentSunHeight > 0.25 && weather.cloud < 0.4 && now > amb.bird){
     amb.bird = now + 5000 + Math.random()*6000;
     sfx.play("bird", {g:0.8 + Math.random()*0.5});
@@ -3273,10 +3304,12 @@ function warnNearLava(dt){
   lavaScanT -= dt; lavaWarnT -= dt;
   if(lavaScanT > 0) return;
   lavaScanT = 0.4;
+  lavaNear = false;
   var px = Math.floor(player.pos.x), py = Math.floor(player.pos.y), pz = Math.floor(player.pos.z);
   for(var x=px-2; x<=px+2; x++) for(var z=pz-2; z<=pz+2; z++) for(var y=py-4; y<=py+1; y++){
     if(blockAt.get(key(x,y,z)) !== "lava") continue;
     if(solidKey(key(x,y+1,z)) && solidKey(key(x+1,y,z)) && solidKey(key(x-1,y,z)) && solidKey(key(x,y,z+1)) && solidKey(key(x,y,z-1))) continue;   // buried
+    lavaNear = true;
     if(lavaWarnT <= 0 && toastEl.hidden){ lavaWarnT = 4; showToast("Lava nearby!"); }   // never talks over another message
     return;
   }
