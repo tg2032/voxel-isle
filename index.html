@@ -426,7 +426,7 @@
 </div>
 
 <div id="deathCard" hidden>
-  <div class="display">YOU FELL<br><span style="font-size:11px;color:#f3d9d6;">A crawler got you — respawning…</span></div>
+  <div class="display">YOU DIED<br><span id="deathCause" style="font-size:11px;color:#f3d9d6;">A crawler got you — respawning…</span></div>
 </div>
 <div id="vignette"></div>
 
@@ -1109,8 +1109,6 @@ BLOCK_TYPES.forEach(function(t){
   typeData[t] = { mesh:mesh, positions:[], posToIndex:new Map() };
 });
 
-var meshToType = new Map();
-BLOCK_TYPES.forEach(function(t){ meshToType.set(typeData[t].mesh, t); });
 
 var dummy = new THREE.Object3D();
 var tmpMatrix = new THREE.Matrix4();
@@ -1277,6 +1275,7 @@ function collideAxis(axis, delta){
 var heartsEl = document.getElementById("hearts");
 var vignetteEl = document.getElementById("vignette");
 var deathCard = document.getElementById("deathCard");
+var deathCauseEl = document.getElementById("deathCause");
 var HEART_PATH = "M50 88 L12 50 C-8 30 8 4 30 10 C40 13 46 22 50 30 C54 22 60 13 70 10 C92 4 108 30 88 50 Z";
 for(var hi=0; hi<10; hi++){
   var heartEl = document.createElement("div");
@@ -1371,7 +1370,7 @@ function updateVitals(dt){
     starveTimer += dt;
     if(starveTimer >= 4){
       starveTimer = 0;
-      if(player.hp > 2) damagePlayer(1, 0, 0, true);
+      if(player.hp > 2) damagePlayer(1, 0, 0, true, "hunger");
     }
   } else starveTimer = 0;
   if(Math.round(hunger*2) !== lastHungerKey) updateHungerUI();
@@ -1384,8 +1383,9 @@ function flashVignette(){
   clearTimeout(flashTimer);
   flashTimer = setTimeout(function(){ vignetteEl.classList.remove("hit"); }, 220);
 }
-function damagePlayer(amount, fromDX, fromDZ, quiet){
+function damagePlayer(amount, fromDX, fromDZ, quiet, cause){
   if(player.dead) return;
+  lastCause = cause || "crawler";
   if(!quiet){
     var red = 1 - (1 - ARMOR_RED[armorTier]) * (1 - SHIELD_RED[shieldTier]);
     amount = Math.max(1, Math.round(amount * (1 - red)));
@@ -1402,7 +1402,10 @@ function damagePlayer(amount, fromDX, fromDZ, quiet){
   updateHearts();
   if(player.hp<=0) killPlayer();
 }
+var lastCause = "crawler";
+var DEATH_TEXT = {crawler:"A crawler got you", lava:"You burned in lava", fall:"You fell from too high", drown:"You ran out of air", hunger:"You starved"};
 function killPlayer(){
+  deathCauseEl.textContent = (DEATH_TEXT[lastCause] || DEATH_TEXT.crawler) + " \u2014 respawning\u2026";
   player.dead = true;
   sfx.play("death");
   deathCard.hidden = false;
@@ -1836,7 +1839,6 @@ document.addEventListener("mousemove", function(e){
 /* selection + raycast interaction */
 var raycaster = new THREE.Raycaster();
 raycaster.far = 6;
-var solidMeshes = BLOCK_TYPES.map(function(t){ return typeData[t].mesh; });
 var selected = 0;
 
 var SWORD_ICON = '<svg class="item" viewBox="0 0 24 24"><path d="M14 2 L21 9 L12.5 17.5 L11 16 L4 23 L1 20 L8 13 L6.5 11.5 L15 3 Z" fill="#c9d3de" stroke="#4a5568" stroke-width="1"/><path d="M8 13 L1 20 L2.5 21.5 L9.5 14.5" fill="#8a5a34"/></svg>';
@@ -2012,15 +2014,21 @@ function toggleCraft(){ if(craftOpen) closeCraft(); else openCraft(); }
 
 function raycastBlock(ndc){
   raycaster.setFromCamera(ndc || {x:0,y:0}, camera);
-  raycaster.far = 6;
-  var hits = raycaster.intersectObjects(solidMeshes);
-  if(!hits.length) return null;
-  var hit = hits[0];
-  var type = meshToType.get(hit.object);
-  var pos = typeData[type].positions[hit.instanceId];
-  if(!pos) return null;
-  var normal = hit.face.normal.clone();
-  return { x:pos[0], y:pos[1], z:pos[2], normal:normal };
+  var o = raycaster.ray.origin, d = raycaster.ray.direction, REACH = 6;
+  var x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
+  var sx = d.x > 0 ? 1 : -1, sy = d.y > 0 ? 1 : -1, sz = d.z > 0 ? 1 : -1;
+  var dx = d.x !== 0 ? Math.abs(1/d.x) : Infinity, dy = d.y !== 0 ? Math.abs(1/d.y) : Infinity, dz = d.z !== 0 ? Math.abs(1/d.z) : Infinity;
+  var tx = d.x === 0 ? Infinity : (d.x > 0 ? x+1-o.x : o.x-x) * dx;
+  var ty = d.y === 0 ? Infinity : (d.y > 0 ? y+1-o.y : o.y-y) * dy;
+  var tz = d.z === 0 ? Infinity : (d.z > 0 ? z+1-o.z : o.z-z) * dz;
+  while(true){
+    var nx = 0, ny = 0, nz = 0, t;
+    if(tx < ty && tx < tz){ x += sx; t = tx; tx += dx; nx = -sx; }
+    else if(ty < tz){ y += sy; t = ty; ty += dy; ny = -sy; }
+    else { z += sz; t = tz; tz += dz; nz = -sz; }
+    if(t > REACH) return null;
+    if(blockAt.has(key(x,y,z))) return { x:x, y:y, z:z, normal:new THREE.Vector3(nx,ny,nz) };
+  }
 }
 
 function raycastMob(){
@@ -3172,7 +3180,19 @@ function isInLava(){
   var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
   return blockAt.get(key(fx, Math.floor(player.pos.y+0.2), fz)) === "lava" || blockAt.get(key(fx, Math.floor(player.pos.y+1.0), fz)) === "lava";
 }
-var lavaTick = 0;
+var lavaTick = 0, lavaScanT = 0, lavaWarnT = 0;
+function warnNearLava(dt){
+  lavaScanT -= dt; lavaWarnT -= dt;
+  if(lavaScanT > 0) return;
+  lavaScanT = 0.4;
+  var px = Math.floor(player.pos.x), py = Math.floor(player.pos.y), pz = Math.floor(player.pos.z);
+  for(var x=px-2; x<=px+2; x++) for(var z=pz-2; z<=pz+2; z++) for(var y=py-4; y<=py+1; y++){
+    if(blockAt.get(key(x,y,z)) !== "lava") continue;
+    if(solidKey(key(x,y+1,z)) && solidKey(key(x+1,y,z)) && solidKey(key(x-1,y,z)) && solidKey(key(x,y,z+1)) && solidKey(key(x,y,z-1))) continue;   // buried
+    if(lavaWarnT <= 0){ lavaWarnT = 4; showToast("Lava nearby!"); }
+    return;
+  }
+}
 
 function update(dt){
   camera.rotation.y = player.yaw;
@@ -3221,7 +3241,7 @@ function update(dt){
     var fallDist = airPeakY - player.pos.y;
     if(!inW && !player.dead && fallDist > 3.5){
       var fallDmg = Math.floor(fallDist - 3);
-      if(fallDmg > 0) damagePlayer(fallDmg, 0, 0, true);
+      if(fallDmg > 0) damagePlayer(fallDmg, 0, 0, true, "fall");
     }
     airPeakY = player.pos.y;
     player.onGround = true;
@@ -3253,7 +3273,7 @@ function update(dt){
     oxygen = Math.max(0, oxygen - dt * 1.5);   // 20 units ≈ 13 s of air
     if(oxygen <= 0){
       drownTimer += dt;
-      if(drownTimer >= 1){ drownTimer -= 1; if(!player.dead) damagePlayer(1, 0, 0, true); }
+      if(drownTimer >= 1){ drownTimer -= 1; if(!player.dead) damagePlayer(1, 0, 0, true, "drown"); }
     } else drownTimer = 0;
     oxygenEl.hidden = false;
   } else {
@@ -3262,9 +3282,10 @@ function update(dt){
   }
   if(Math.round(oxygen*2) !== lastOxygenKey) updateOxygenUI();
   wasInWater = swimming;
+  if(!inLava && !player.dead) warnNearLava(dt);
   if(inLava && !player.dead){
     lavaTick += dt;
-    if(lavaTick >= 0.5){ lavaTick = 0; damagePlayer(3, 0, 0, true); }
+    if(lavaTick >= 0.5){ lavaTick = 0; damagePlayer(3, 0, 0, true, "lava"); }
   } else lavaTick = 0;
   updateVitals(dt);
 
