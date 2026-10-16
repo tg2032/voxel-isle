@@ -102,6 +102,11 @@
     position:absolute; top:3px; left:50%; transform:translateX(-50%);
     font:700 9px 'Inter',sans-serif; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.9); letter-spacing:0.05em;
   }
+  #dangerPill{
+    pointer-events:none; padding:5px 12px; border-radius:999px; backdrop-filter: blur(3px);
+    background:rgba(20,22,26,0.5); border:1px solid var(--line);
+    font-size:11px; color:#ffd0c8; text-shadow:0 2px 4px rgba(0,0,0,0.5);
+  }
   #wxPill{
     pointer-events:none; padding:5px 12px; border-radius:999px; backdrop-filter: blur(3px);
     background:rgba(20,22,26,0.5); border:1px solid var(--line);
@@ -452,6 +457,7 @@
     <div id="topright">
       <div id="clock"><div id="clockDial"><div id="clockSun"></div></div><div id="clockTime" class="display">06:00</div></div>
       <div id="wxPill" hidden></div>
+      <div id="dangerPill" hidden></div>
       <div id="sndPill" hidden>Sound off (K)</div>
       <div id="myStats" hidden></div>
       <div id="online" hidden><span class="odot"></span><span id="onlineText">1 online</span></div>
@@ -1452,6 +1458,47 @@ function treeBlocks(x,z,gy){
   }
   return false;
 }
+/* health bars: shown only for hurt mobs, always facing the camera */
+var barGeo = new THREE.PlaneGeometry(1,1);
+var barBgMat = new THREE.MeshBasicMaterial({color:0x111111, transparent:true, opacity:0.75, depthWrite:false});
+var barMats = [0x5fd06a, 0xf2c744, 0xe5493f].map(function(c){ return new THREE.MeshBasicMaterial({color:c, transparent:true, depthWrite:false}); });   // transparent so it is drawn after (on top of) the dark backing
+function makeBar(){
+  var g = new THREE.Group();
+  var bg = new THREE.Mesh(barGeo, barBgMat); bg.scale.set(0.92, 0.13, 1); bg.renderOrder = 10;
+  var fill = new THREE.Mesh(barGeo, barMats[0]); fill.position.z = 0.002; fill.renderOrder = 11;
+  g.add(bg); g.add(fill);
+  g.userData.fill = fill;
+  g.visible = false;
+  return g;
+}
+var BAR_HEIGHT = {crawler:1.85, pig:1.2, cow:1.4};
+function updateMobBars(){
+  for(var i=0; i<monsters.length; i++){
+    var m = monsters[i], bar = m.bar;
+    if(!bar) continue;
+    var ratio = m.maxHealth > 0 ? Math.max(0, Math.min(1, m.health / m.maxHealth)) : 1;
+    var dx = m.x - player.pos.x, dz = m.z - player.pos.z;
+    if(ratio >= 0.999 || m.health <= 0 || dx*dx + dz*dz > 26*26){ bar.visible = false; continue; }
+    bar.visible = true;
+    bar.position.set(m.x, m.y + (BAR_HEIGHT[m.kind] || 1.5), m.z);
+    bar.quaternion.copy(camera.quaternion);
+    var fill = bar.userData.fill;
+    fill.scale.set(0.86 * ratio, 0.08, 1);
+    fill.position.x = (ratio - 1) * 0.43;
+    fill.material = barMats[ratio > 0.5 ? 0 : (ratio > 0.25 ? 1 : 2)];
+  }
+}
+var DANGER_NAMES = ["Dusk", "Night", "Deep night"], dangerT = 0;
+function updateDangerPill(now){
+  if(now < dangerT) return;
+  dangerT = now + 500;
+  var df = difficulty(), el = document.getElementById("dangerPill");
+  var active = currentSunHeight <= 0.12 || df.nf > 0;
+  el.hidden = !active;
+  if(!active) return;
+  var lvl = df.nf < 0.34 ? 0 : (df.nf < 0.8 ? 1 : 2);
+  el.textContent = "Danger: " + DANGER_NAMES[lvl] + " " + "\u25A0".repeat(lvl + 1) + "\u25A1".repeat(2 - lvl);
+}
 var mobBodyMat = new THREE.MeshLambertMaterial({color:0x4c8a46});
 var mobHeadMat = new THREE.MeshLambertMaterial({color:0x3f7a3a});
 var mobLimbMat = new THREE.MeshLambertMaterial({color:0x2a3a24});
@@ -1512,6 +1559,19 @@ function makeAnimalMesh(kind){
 
 var monsters = [];
 var MAX_MOBS = 10, CRAWLER_HP = 24, CRAWLER_DMG = 4;
+/* enemies scale with how dark it is: weak and few at dusk, strongest and most numerous at midnight */
+function difficulty(){
+  var nf = Math.max(0, Math.min(1, -currentSunHeight * 2));      // 0 at the horizon .. 1 at midnight
+  if(nf <= 0 && weather.state === 3 && weather.rain > 0.7) nf = 0.25;   // a daytime thunderstorm counts as a mild night
+  return {
+    nf: nf,
+    hp: Math.round(CRAWLER_HP * (0.7 + 0.5*nf)),
+    dmg: Math.max(1, Math.round(CRAWLER_DMG * (0.75 + 0.5*nf))),
+    speed: 0.9 + 0.3*nf,
+    cap: Math.round(3 + (MAX_MOBS - 3) * nf),
+    interval: 3600 - 2000*nf
+  };
+}
 var ANIMAL_TARGET = 5;
 var lastAnimalSpawn = 0;
 var mobHitMeshes = [];
@@ -1526,7 +1586,7 @@ function createMob(id, x, y, z, health, kind){
   scene.add(group);
   var mob = {
     id: id, kind: kind, group: group, x:x, y:y, z:z, tr:0, tx:x, ty:y, tz:z,
-    health: health, maxHealth: 6, fleeUntil: 0, fleeX: 0, fleeZ: 0, idle: false,
+    health: health, maxHealth: health, fleeUntil: 0, fleeX: 0, fleeZ: 0, idle: false,
     wanderAngle: Math.random()*Math.PI*2,
     wanderTimer: 0,
     lastAttack: 0,
@@ -1534,6 +1594,8 @@ function createMob(id, x, y, z, health, kind){
     speed: kind === "crawler" ? 2.3 + Math.random()*0.7 : 0.9 + Math.random()*0.4
   };
   group.traverse(function(o){ if(o.isMesh){ o.userData.mob = mob; mobHitMeshes.push(o); } });
+  mob.bar = makeBar();
+  scene.add(mob.bar);
   monsters.push(mob);
   return mob;
 }
@@ -1564,7 +1626,9 @@ function spawnMob(){
   var gy = terrainHeightAt(x,z);
   if(gy < SEA_LEVEL || treeBlocks(x,z,gy)) return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
-  createMob(nextMobId++, x, gy, z, CRAWLER_HP);
+  var df = difficulty();
+  var mob = createMob(nextMobId++, x, gy, z, df.hp);
+  mob.dmg = df.dmg; mob.speed *= df.speed;
 }
 
 function spawnAnimal(){
@@ -1579,6 +1643,7 @@ function spawnAnimal(){
 
 function removeMob(mob){
   scene.remove(mob.group);
+  if(mob.bar) scene.remove(mob.bar);
   mob.group.traverse(function(o){
     if(!o.isMesh) return;
     o.geometry.dispose();
@@ -1656,6 +1721,7 @@ function syncMonstersFromHost(dt){
       if(mob && mob.kind !== wantKind){ removeMob(mob); mob = null; }
       if(!mob) mob = createMob(m[0], m[1], m[2], m[3], m[5], wantKind);
       mob.tx = m[1]; mob.ty = m[2]; mob.tz = m[3]; mob.tr = m[4]; mob.health = m[5];
+      mob.maxHealth = isFiniteNum(m[7]) && m[7] > 0 ? m[7] : Math.max(mob.maxHealth, mob.health);
     });
     monsters.slice().forEach(function(mob){
       if(!seen[mob.id]){
@@ -1723,9 +1789,10 @@ function updateMonsters(dt, now){
     hostiles.forEach(removeMob);
     hostiles = [];
   }
-  if((currentSunHeight <= 0 || gloom) && now-lastSpawnCheck > 3500){
+  var dfc = difficulty();
+  if((currentSunHeight <= 0 || gloom) && now-lastSpawnCheck > dfc.interval){
     lastSpawnCheck = now;
-    if(hostiles.length < (currentSunHeight <= 0 ? MAX_MOBS : 4) && Math.random() < 0.85) spawnMob();
+    if(hostiles.length < dfc.cap && Math.random() < 0.85) spawnMob();
   }
   var animalCount = monsters.length - hostiles.length;
   if(animalCount < ANIMAL_TARGET && now-lastAnimalSpawn > (animalCount < 3 ? 1200 : 6000)){
@@ -1769,8 +1836,9 @@ function updateMonsters(dt, now){
 
     if(tg && distToTarget < 1.15 && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 1.8) && now-mob.lastAttack > 750){
       mob.lastAttack = now;
-      if(tg.peer === null) damagePlayer(CRAWLER_DMG, dxp, dzp);
-      else if(net.room) net.room.emit("pdmg", {to:tg.peer, amt:CRAWLER_DMG, dx:Math.round(dxp*100)/100, dz:Math.round(dzp*100)/100}).catch(function(){});
+      var hitDmg = mob.dmg || CRAWLER_DMG;
+      if(tg.peer === null) damagePlayer(hitDmg, dxp, dzp);
+      else if(net.room) net.room.emit("pdmg", {to:tg.peer, amt:hitDmg, dx:Math.round(dxp*100)/100, dz:Math.round(dzp*100)/100}).catch(function(){});
     }
   });
 }
@@ -1843,6 +1911,7 @@ var selected = 0;
 
 var SWORD_ICON = '<svg class="item" viewBox="0 0 24 24"><path d="M14 2 L21 9 L12.5 17.5 L11 16 L4 23 L1 20 L8 13 L6.5 11.5 L15 3 Z" fill="#c9d3de" stroke="#4a5568" stroke-width="1"/><path d="M8 13 L1 20 L2.5 21.5 L9.5 14.5" fill="#8a5a34"/></svg>';
 var ARMOR_ICON = function(c){ return '<svg class="item" viewBox="0 0 24 24"><path d="M8 3 L4 6 L2 11 L6 12 L6 21 L18 21 L18 12 L22 11 L20 6 L16 3 C15 5 9 5 8 3 Z" fill="'+c+'" stroke="#333" stroke-width="1.2"/></svg>'; };
+var PICK_ICON = function(c){ return '<svg class="item" viewBox="0 0 24 24"><path d="M3 9 C8 2 16 2 21 9 L18.5 10.5 C15 6.5 9 6.5 5.5 10.5 Z" fill="'+c+'" stroke="#333" stroke-width="1.1"/><rect x="11" y="7" width="2.2" height="16" rx="0.8" fill="#8a5a34" stroke="#333" stroke-width="0.8"/></svg>'; };
 var SHIELD_ICON = function(c){ return '<svg class="item" viewBox="0 0 24 24"><path d="M12 2 L21 5 V12 C21 17 17 21 12 23 C7 21 3 17 3 12 V5 Z" fill="'+c+'" stroke="#333" stroke-width="1.2"/></svg>'; };
 var BOW_ICON = '<svg class="item" viewBox="0 0 24 24"><path d="M6 2 C2 7 2 17 6 22" fill="none" stroke="#c9a875" stroke-width="2.2" stroke-linecap="round"/><line x1="6" y1="2" x2="6" y2="22" stroke="#eef2f6" stroke-width="1"/><line x1="3" y1="12" x2="19" y2="12" stroke="#8a5a34" stroke-width="1.4"/></svg>';
 var ARROW_ICON = '<svg viewBox="0 0 24 24"><line x1="3" y1="21" x2="19" y2="5" stroke="#8a5a34" stroke-width="2" stroke-linecap="round"/><path d="M19 5 L14 6 L18 10 Z" fill="#8b8f96"/><path d="M3 21 L4 16 L8 20 Z" fill="#c9d3de"/></svg>';
@@ -1860,7 +1929,7 @@ var ITEMS = [
 var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0};
 var unlocked = {sword:false, bow:false};
 var arrowCount = 0;
-var swordTier = 0, armorTier = 0, shieldTier = 0;   // 0 none/iron, 1 gold, 2 diamond
+var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // 0 none/iron, 1 gold, 2 diamond
 var SWORD_DMG = [9, 14, 20], ARMOR_RED = [0, 0.3, 0.55], SHIELD_RED = [0, 0.2, 0.35];
 var TIER_NAME = ["", "Gold", "Diamond"], TIER_COLOR = [0xc9d3de, 0xf2c744, 0x5ee6ee];
 
@@ -1941,6 +2010,10 @@ var RECIPES = [
     cost:{gold:3, wood:1}, done:function(){ return swordTier >= 1; }, apply:function(){ swordTier = Math.max(swordTier,1); unlocked.sword = true; updateGear(); } },
   { id:"sword2", label:"Diamond Sword", desc:"Upgrades your sword — 20 dmg", icon:SWORD_ICON.replace("#c9d3de","#5ee6ee"),
     cost:{diamond:3, wood:1}, done:function(){ return swordTier >= 2; }, apply:function(){ swordTier = 2; unlocked.sword = true; updateGear(); } },
+  { id:"pick1", label:"Gold Pickaxe", desc:"Mines 2x faster in stone and ore, 1.5x elsewhere", icon:PICK_ICON("#f2c744"),
+    cost:{gold:3, wood:2}, done:function(){ return pickTier >= 1; }, apply:function(){ pickTier = Math.max(pickTier,1); updateGear(); } },
+  { id:"pick2", label:"Diamond Pickaxe", desc:"Mines 3.2x faster in stone and ore, 2x elsewhere", icon:PICK_ICON("#5ee6ee"),
+    cost:{diamond:3, wood:2}, done:function(){ return pickTier >= 2; }, apply:function(){ pickTier = 2; updateGear(); } },
   { id:"armor1", label:"Gold Armor", desc:"Takes 30% less damage from enemies", icon:ARMOR_ICON("#f2c744"),
     cost:{gold:8}, done:function(){ return armorTier >= 1; }, apply:function(){ armorTier = Math.max(armorTier,1); updateGear(); } },
   { id:"armor2", label:"Diamond Armor", desc:"Takes 55% less damage from enemies", icon:ARMOR_ICON("#5ee6ee"),
@@ -2067,6 +2140,7 @@ function updateGear(){
   if(swordTier) parts.push(TIER_NAME[swordTier] + " sword");
   if(armorTier) parts.push(TIER_NAME[armorTier] + " armor");
   if(shieldTier) parts.push(TIER_NAME[shieldTier] + " shield");
+  if(pickTier) parts.push(TIER_NAME[pickTier] + " pickaxe");
   gearEl.hidden = !parts.length;
   gearEl.innerHTML = parts.join(" &middot; ");
 }
@@ -2289,6 +2363,12 @@ var lastAttackTime = 0;
 selectSlot(0);
 
 /* ---------- mining: blocks take time to break, so a single click never removes one ---------- */
+function mineSpeed(type, item){
+  var rock = type === "stone" || type === "gold_ore" || type === "diamond_ore";
+  var pick = (rock ? [1, 2, 3.2] : [1, 1.5, 2])[pickTier];   // the best pickaxe you own is used automatically
+  return Math.max(pick, item.id === "sword" ? 1.3 : 1);
+}
+function mineNeed(type, item){ return (HARDNESS[type] || 1) / mineSpeed(type, item); }
 var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4, gold_ore:3.0, diamond_ore:4.2};
 var primaryHeld = false;
 var mine = { x:0, y:0, z:0, t:0, active:false, swing:0, probe:0 };
@@ -2318,7 +2398,7 @@ function updateMining(dt){
     if(!mine.warned){ mine.warned = true; showToast(type === "bedrock" ? "Bedrock \u2014 you can't dig any deeper" : "Lava can't be mined"); }
     return;
   }
-  var need = (HARDNESS[type] || 1) / (item.id === "sword" ? 1.3 : 1);
+  var need = mineNeed(type, item);
   mine.t += dt;
   mine.swing -= dt;
   if(mine.swing <= 0){ mine.swing = 0.32; triggerSwing(); }
@@ -2615,7 +2695,7 @@ function sendPresence(){
   };
   if(net.hostPeer !== null && net.hostPeer === net.myPeer){
     patch.mobs = monsters.map(function(m){
-      return [m.id, Math.round(m.x*100)/100, Math.round(m.y*100)/100, Math.round(m.z*100)/100, Math.round(m.group.rotation.y*100)/100, Math.max(0, m.health), Math.max(0, KINDS.indexOf(m.kind))];
+      return [m.id, Math.round(m.x*100)/100, Math.round(m.y*100)/100, Math.round(m.z*100)/100, Math.round(m.group.rotation.y*100)/100, Math.max(0, m.health), Math.max(0, KINDS.indexOf(m.kind)), Math.round(m.maxHealth)];
     });
     patch.day = Math.round(dayElapsed*10)/10;
     patch.wx = weather.state;
@@ -2824,7 +2904,7 @@ chatInputEl.addEventListener("keydown", function(e){
     net.room.on("pdmg", function(msg){
       var d = msg.data;
       if(msg.peer !== net.hostPeer || !d || d.to !== net.myPeer || !isFiniteNum(d.amt)) return;
-      damagePlayer(Math.min(4, Math.max(0, d.amt)), isFiniteNum(d.dx) ? d.dx : 0, isFiniteNum(d.dz) ? d.dz : 0);
+      damagePlayer(Math.min(8, Math.max(0, d.amt)), isFiniteNum(d.dx) ? d.dx : 0, isFiniteNum(d.dz) ? d.dz : 0);
     });
     net.room.presence({host: net.canHost}).catch(function(){});
     net.room.on("block", function(msg){
@@ -3322,6 +3402,8 @@ function animate(){
   updateMinimap(now);
   updateAmbient(now);
   updateViewSwing(dt);
+  updateMobBars();
+  updateDangerPill(now);
   updateTorchLights(dt, now);
   renderer.render(scene, camera);
 }
@@ -3343,7 +3425,7 @@ function savePlayer(){
   if(player.dead) return;
   try{
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      inv:inventory, gear:{s:swordTier, a:armorTier, h:shieldTier}, unlocked:unlocked, arrows:arrowCount, food:food, hunger:hunger, hp:player.hp,
+      inv:inventory, gear:{s:swordTier, a:armorTier, h:shieldTier, p:pickTier}, unlocked:unlocked, arrows:arrowCount, food:food, hunger:hunger, hp:player.hp,
       pos:[player.pos.x, player.pos.y, player.pos.z], yaw:player.yaw, pitch:player.pitch, sel:selected
     }));
   }catch(e){}
@@ -3372,7 +3454,7 @@ function savePlayer(){
   if(d.inv && typeof d.inv === "object") Object.keys(inventory).forEach(function(t){ inventory[t] = Math.floor(num(d.inv[t], 0, 9999, inventory[t])); });
   if(d.gear && typeof d.gear === "object"){
     var tier = function(v){ return v === 1 || v === 2 ? v : 0; };
-    swordTier = tier(d.gear.s); armorTier = tier(d.gear.a); shieldTier = tier(d.gear.h);
+    swordTier = tier(d.gear.s); armorTier = tier(d.gear.a); shieldTier = tier(d.gear.h); pickTier = tier(d.gear.p);
     if(swordTier > 0) unlocked.sword = true;
   }
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
