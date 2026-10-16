@@ -2337,12 +2337,15 @@ function doSecondary(ndc){
   var hit2 = raycastBlock(ndc);
   if(!hit2) return;
   var nx = hit2.x+hit2.normal.x, ny = hit2.y+hit2.normal.y, nz = hit2.z+hit2.normal.z;
+  var onLava = blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "lava";
+  if(onLava){ nx = hit2.x; ny = hit2.y; nz = hit2.z; }   // placing a block on lava covers it up
   var px = player.pos, hw = player.halfW;
   var overlapsPlayer =
     nx+1 > px.x-hw && nx < px.x+hw &&
     nz+1 > px.z-hw && nz < px.z+hw &&
     ny+1 > px.y && ny < px.y+player.height;
   if(!overlapsPlayer && ny>=0 && ny<MAX_H+20 && nx>=0 && nx<SIZE && nz>=0 && nz<SIZE){
+    if(onLava) removeBlock(nx, ny, nz);
     if(addBlock(item.id, nx, ny, nz)){
       inventory[item.id]--;
       updateHotbarCounts();
@@ -2558,7 +2561,7 @@ function applyRemoteEdit(x,y,z,t){
   if(!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
   if(x<0 || x>=SIZE || z<0 || z>=SIZE || y<0 || y>MAX_H+30) return;
   var cur = blockAt.get(key(x,y,z));
-  if(cur && UNBREAKABLE[cur]) return;
+  if(cur === "bedrock" || (cur === "lava" && t === "air")) return;   // bedrock never changes; lava can be built over but not removed
   if(t==="air"){
     if(cur){ removeBlock(x,y,z); sfx.at("break", x+0.5, y+0.5, z+0.5, {v:cur}); }
     return;
@@ -3274,7 +3277,7 @@ function warnNearLava(dt){
   for(var x=px-2; x<=px+2; x++) for(var z=pz-2; z<=pz+2; z++) for(var y=py-4; y<=py+1; y++){
     if(blockAt.get(key(x,y,z)) !== "lava") continue;
     if(solidKey(key(x,y+1,z)) && solidKey(key(x+1,y,z)) && solidKey(key(x-1,y,z)) && solidKey(key(x,y,z+1)) && solidKey(key(x,y,z-1))) continue;   // buried
-    if(lavaWarnT <= 0){ lavaWarnT = 4; showToast("Lava nearby!"); }
+    if(lavaWarnT <= 0 && toastEl.hidden){ lavaWarnT = 4; showToast("Lava nearby!"); }   // never talks over another message
     return;
   }
 }
@@ -3441,7 +3444,7 @@ function savePlayer(){
     if(x<0 || x>=SIZE || z<0 || z>=SIZE || y<0 || y>MAX_H+30) return;
     localEdits[x+"_"+y+"_"+z] = [x,y,z,t];
     var cur = blockAt.get(key(x,y,z));
-    if(cur && UNBREAKABLE[cur]) return;
+    if(cur === "bedrock" || (cur === "lava" && t === "air")) return;
     if(t === "air"){ if(cur) removeBlock(x,y,z); }
     else if(PLACEABLE.indexOf(t) >= 0 && cur !== t){ if(cur) removeBlock(x,y,z); addBlock(t,x,y,z); }
   });
