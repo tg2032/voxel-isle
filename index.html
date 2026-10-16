@@ -1062,7 +1062,42 @@ blockAt.forEach(function(type, k){
 BLOCK_TYPES.forEach(function(t){ typeData[t].mesh.instanceMatrix.needsUpdate = true; });
 
 /* live add / remove keeping instance arrays dense */
-var torchLights = new Map();
+/* a fixed pool of point lights follows the nearest torches: the light count never changes, so no shader recompiles */
+var TORCH_POOL = 6, TORCH_REACH = 18;
+var torchPool = [];
+for(var tpi=0; tpi<TORCH_POOL; tpi++){
+  var tl = new THREE.PointLight(0xffaa33, 0, 9);
+  tl.userData.on = false;
+  scene.add(tl);
+  torchPool.push(tl);
+}
+var torchPickT = 0;
+function updateTorchLights(dt, now){
+  torchPickT -= dt;
+  if(torchPickT <= 0){
+    torchPickT = 0.3;
+    var ps = typeData.torch.positions, best = [];
+    for(var i=0; i<ps.length; i++){
+      var dx = ps[i][0]+0.5-player.pos.x, dy = ps[i][1]-player.pos.y, dz = ps[i][2]+0.5-player.pos.z;
+      var d2 = dx*dx+dy*dy+dz*dz;
+      if(d2 > TORCH_REACH*TORCH_REACH) continue;
+      var j = best.length;
+      while(j > 0 && best[j-1][0] > d2) j--;
+      if(j < TORCH_POOL){ best.splice(j, 0, [d2, ps[i]]); if(best.length > TORCH_POOL) best.pop(); }
+    }
+    for(var k=0; k<TORCH_POOL; k++){
+      var l = torchPool[k];
+      if(k < best.length){
+        var q = best[k][1];
+        l.position.set(q[0]+0.5, q[1]+0.8, q[2]+0.5);
+        l.userData.on = true;
+      } else { l.userData.on = false; l.intensity = 0; }
+    }
+  }
+  for(var m=0; m<TORCH_POOL; m++){
+    if(torchPool[m].userData.on) torchPool[m].intensity = 1.25 + Math.sin(now*0.012 + m*1.7)*0.12;
+  }
+}
 function addBlock(type, x,y,z){
   var k = key(x,y,z);
   if(blockAt.has(k)) return false;
@@ -1072,12 +1107,7 @@ function addBlock(type, x,y,z){
   td.mesh.instanceMatrix.needsUpdate = true;
   blockAt.set(k, type);
   mmDirty[x+","+z] = [x,z];
-  if(type === "torch"){
-    var light = new THREE.PointLight(0xffaa33, 1.2, 8);
-    light.position.set(x+0.5, y+0.8, z+0.5);
-    scene.add(light);
-    torchLights.set(k, light);
-  }
+  if(type === "torch") torchPickT = 0;
   return true;
 }
 function removeBlock(x,y,z){
@@ -1100,10 +1130,7 @@ function removeBlock(x,y,z){
   td.mesh.instanceMatrix.needsUpdate = true;
   blockAt.delete(k);
   mmDirty[x+","+z] = [x,z];
-  if(type === "torch"){
-    var light = torchLights.get(k);
-    if(light){ scene.remove(light); torchLights.delete(k); }
-  }
+  if(type === "torch") torchPickT = 0;
   return type;
 }
 
@@ -1380,6 +1407,7 @@ function makeAnimalMesh(kind){
   var cow = kind === "cow";
   function part(w,h,d,color,x,y,z){
     var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:color}));
+    m.userData.ownMat = true;
     m.position.set(x,y,z); g.add(m); return m;
   }
   part(0.5,0.5,0.9, cow ? 0x4a3526 : 0xf2a7a7, 0,0.62,0);
@@ -1473,6 +1501,11 @@ function spawnAnimal(){
 
 function removeMob(mob){
   scene.remove(mob.group);
+  mob.group.traverse(function(o){
+    if(!o.isMesh) return;
+    o.geometry.dispose();
+    if(o.userData.ownMat) o.material.dispose();
+  });
   mobHitMeshes = mobHitMeshes.filter(function(m){ return m.userData.mob !== mob; });
   monsters = monsters.filter(function(m){ return m !== mob; });
 }
@@ -1968,11 +2001,12 @@ function updateViewSwing(dt){
 var arrows = [];
 var arrowShaftMat = new THREE.MeshLambertMaterial({color:0x8a5a34});
 var arrowTipMat = new THREE.MeshLambertMaterial({color:0x8b8f96});
+var arrowShaftGeo = new THREE.BoxGeometry(0.04,0.04,0.4), arrowTipGeo = new THREE.ConeGeometry(0.035,0.1,6);
 function makeArrowMesh(){
   var g = new THREE.Group();
-  var shaft = new THREE.Mesh(new THREE.BoxGeometry(0.04,0.04,0.4), arrowShaftMat);
+  var shaft = new THREE.Mesh(arrowShaftGeo, arrowShaftMat);
   g.add(shaft);
-  var tip = new THREE.Mesh(new THREE.ConeGeometry(0.035,0.1,6), arrowTipMat);
+  var tip = new THREE.Mesh(arrowTipGeo, arrowTipMat);
   tip.rotation.x = Math.PI/2; tip.position.z = 0.25;
   g.add(tip);
   return g;
@@ -2130,7 +2164,7 @@ selectSlot(0);
 /* ---------- mining: blocks take time to break, so a single click never removes one ---------- */
 var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4};
 var primaryHeld = false;
-var mine = { x:0, y:0, z:0, t:0, active:false, swing:0 };
+var mine = { x:0, y:0, z:0, t:0, active:false, swing:0, probe:0 };
 var mineBarEl = document.getElementById("mineBar"), mineFillEl = document.getElementById("mineFill");
 function resetMining(){
   if(mine.active){ mine.active = false; mine.t = 0; mineBarEl.hidden = true; }
@@ -2138,16 +2172,20 @@ function resetMining(){
 function updateMining(dt){
   var item = currentItem();
   if(!locked || player.dead || (item.kind === "weapon" && item.ranged)){ resetMining(); return; }
-  raycaster.far = item.kind === "weapon" ? item.range : FIST.range;
-  var mob = raycastMob();
-  raycaster.far = 6;
-  if(mob){ resetMining(); return; }
-  var hit = raycastBlock();
-  if(!hit){ resetMining(); return; }
-  if(!mine.active || mine.x !== hit.x || mine.y !== hit.y || mine.z !== hit.z){
-    mine.x = hit.x; mine.y = hit.y; mine.z = hit.z; mine.t = 0; mine.active = true; mine.swing = 0;
+  mine.probe -= dt;
+  if(mine.probe <= 0 || !mine.active){
+    mine.probe = 0.06;   /* raycasting every instance each frame is costly on phones */
+    raycaster.far = item.kind === "weapon" ? item.range : FIST.range;
+    var mob = raycastMob();
+    raycaster.far = 6;
+    var hit = mob ? null : raycastBlock();
+    if(!hit){ resetMining(); return; }
+    if(!mine.active || mine.x !== hit.x || mine.y !== hit.y || mine.z !== hit.z){
+      mine.x = hit.x; mine.y = hit.y; mine.z = hit.z; mine.t = 0; mine.active = true; mine.swing = 0;
+    }
   }
-  var type = blockAt.get(key(hit.x, hit.y, hit.z));
+  var type = blockAt.get(key(mine.x, mine.y, mine.z));
+  if(!type){ resetMining(); return; }
   var need = (HARDNESS[type] || 1) / (item.id === "sword" ? 1.3 : 1);
   mine.t += dt;
   mine.swing -= dt;
@@ -2155,12 +2193,13 @@ function updateMining(dt){
   mineBarEl.hidden = false;
   mineFillEl.style.width = Math.min(100, mine.t/need*100) + "%";
   if(mine.t >= need){
-    var removedType = removeBlock(hit.x, hit.y, hit.z);
+    var bx = mine.x, by = mine.y, bz = mine.z;
+    var removedType = removeBlock(bx, by, bz);
     resetMining();
     if(removedType){
-      spawnDrop(removedType, hit.x+0.5, hit.y+0.5, hit.z+0.5);
+      spawnDrop(removedType, bx+0.5, by+0.5, bz+0.5);
       sfx.play("break", {v:removedType});
-      netEdit(hit.x, hit.y, hit.z, null);
+      netEdit(bx, by, bz, null);
     }
   }
 }
@@ -3124,6 +3163,7 @@ function animate(){
   updateMinimap(now);
   updateAmbient(now);
   updateViewSwing(dt);
+  updateTorchLights(dt, now);
   renderer.render(scene, camera);
 }
 
