@@ -1102,7 +1102,7 @@ var typeData = {};
 BLOCK_TYPES.forEach(function(t){
   var count = 0;
   blockAt.forEach(function(v){ if(v===t) count++; });
-  var maxCount = count + 400;
+  var maxCount = count + (PLACEABLE.indexOf(t) >= 0 ? 3000 : 400);   // room for lots of building / restored edits
   var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : (t==="lava" ? lavaMaterial : atlasMaterial), Math.max(maxCount,1));
   mesh.count = 0;
   scene.add(mesh);
@@ -2169,6 +2169,7 @@ function updateArrows(dt, now){
 var drops = [];
 var foodDropGeo = new THREE.BoxGeometry(0.3, 0.22, 0.3);
 var foodDropMats = {};
+var MAX_DROPS = 120, DROP_LIFE = 180000;
 function spawnDrop(type, x, y, z){
   var mesh;
   if(Object.prototype.hasOwnProperty.call(FOODS, type)){
@@ -2183,6 +2184,7 @@ function spawnDrop(type, x, y, z){
   }
   mesh.position.set(x + (Math.random()-0.5)*0.3, y, z + (Math.random()-0.5)*0.3);
   scene.add(mesh);
+  while(drops.length >= MAX_DROPS){ scene.remove(drops[0].mesh); drops.shift(); }
   drops.push({
     mesh: mesh, type: type,
     vel: new THREE.Vector3((Math.random()-0.5)*1.2, 3.2, (Math.random()-0.5)*1.2),
@@ -2192,6 +2194,7 @@ function spawnDrop(type, x, y, z){
 function updateDrops(dt, now){
   for(var i=drops.length-1; i>=0; i--){
     var d = drops[i];
+    if(now - d.born > DROP_LIFE){ scene.remove(d.mesh); drops.splice(i,1); continue; }
     if(d.restY===null){
       d.vel.y += GRAVITY*0.4*dt;
       d.mesh.position.addScaledVector(d.vel, dt);
@@ -2460,10 +2463,12 @@ var lastPresence = "";
 setTimeout(function(){ if(typeof updateMyStats === "function") updateMyStats(); }, 0);
 
 /* every edit is also kept locally so a reload (or a page without the shared db) keeps the world and the inventory consistent */
-var localEdits = {}, localEditsDirty = false, LOCAL_EDIT_CAP = 6000;
+var localEdits = {}, localEditsDirty = false, LOCAL_EDIT_CAP = 20000;
 function netEdit(x,y,z,type){
   var t = type || "air";
-  localEdits[x+"_"+y+"_"+z] = [x,y,z,t];
+  var ek = x+"_"+y+"_"+z;
+  delete localEdits[ek];            // re-insert so the key order is oldest -> newest
+  localEdits[ek] = [x,y,z,t];
   localEditsDirty = true;
   if(net.room) net.room.emit("block", {x:x, y:y, z:z, t:t}).catch(function(){});
   if(net.db) net.db.doc("edits/"+x+"_"+y+"_"+z).set({x:x, y:y, z:z, t:t}).catch(function(){});
@@ -3328,7 +3333,11 @@ function savePlayer(){
     if(localEditsDirty){
       localEditsDirty = false;
       var ks = Object.keys(localEdits);
-      if(ks.length <= LOCAL_EDIT_CAP) localStorage.setItem(EDITS_KEY, JSON.stringify(ks.map(function(k){ return localEdits[k]; })));
+      if(ks.length > LOCAL_EDIT_CAP){
+        ks.slice(0, ks.length - LOCAL_EDIT_CAP).forEach(function(k){ delete localEdits[k]; });   // forget the oldest edits
+        ks = ks.slice(-LOCAL_EDIT_CAP);
+      }
+      localStorage.setItem(EDITS_KEY, JSON.stringify(ks.map(function(k){ return localEdits[k]; })));
     }
   }catch(e){}
   if(player.dead) return;
@@ -3343,7 +3352,7 @@ function savePlayer(){
   var list = null;
   try{ list = JSON.parse(localStorage.getItem(EDITS_KEY) || "null"); }catch(e){}
   if(!Array.isArray(list)) return;
-  list.slice(0, LOCAL_EDIT_CAP).forEach(function(e){
+  list.slice(-LOCAL_EDIT_CAP).forEach(function(e){
     if(!Array.isArray(e) || e.length !== 4) return;
     var x = e[0], y = e[1], z = e[2], t = e[3];
     if(!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
