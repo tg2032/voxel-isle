@@ -1809,9 +1809,57 @@ function updateAnimal(mob, dt, now){
   animateMobLimbs(mob, dt, moving);
 }
 
+/* ---- cave crawlers: they live underground, walk on cave floors and ignore the day/night cycle ---- */
+var MAX_CAVE_MOBS = 3, lastCaveSpawn = 0;
+function caveFloor(x, z, fromY){
+  var xi = Math.floor(x), zi = Math.floor(z), top = Math.floor(fromY);
+  for(var y = top + 1; y >= top - 3; y--){
+    if(solidKey(key(xi,y-1,zi)) && !solidKey(key(xi,y,zi)) && !solidKey(key(xi,y+1,zi)) &&
+       blockAt.get(key(xi,y,zi)) !== "lava" && blockAt.get(key(xi,y+1,zi)) !== "lava") return y;
+  }
+  return -1;
+}
+function playerUnderground(){
+  if(caveDark < 0.8 || player.dead) return false;
+  var h = terrainHeightAt(player.pos.x, player.pos.z);
+  return h > 0 && player.pos.y < h - 3;
+}
+function spawnCaveMob(){
+  /* breadth-first over walkable cave floor starting at the player, so the crawler always spawns somewhere it can walk from */
+  var sx = Math.floor(player.pos.x), sz = Math.floor(player.pos.z);
+  var sy = caveFloor(player.pos.x, player.pos.z, player.pos.y);
+  if(sy < 0) sy = Math.floor(player.pos.y);
+  var queue = [[sx, sy, sz]], seen = {}, cands = [], head = 0;
+  seen[key(sx,sy,sz)] = 1;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  while(head < queue.length && queue.length < 600){
+    var c = queue[head++];
+    var d = Math.hypot(c[0]-sx, c[2]-sz);
+    if(d >= 6 && c[1] >= 3 && Math.abs(c[1] - player.pos.y) <= 5) cands.push(c);
+    for(var k = 0; k < 4; k++){
+      var nx = c[0] + dirs[k][0], nz = c[2] + dirs[k][1];
+      if(nx < 2 || nz < 2 || nx > SIZE-2 || nz > SIZE-2) continue;
+      if(Math.hypot(nx-sx, nz-sz) > 16) continue;
+      var ny = caveFloor(nx+0.5, nz+0.5, c[1]);
+      if(ny < 0 || ny - c[1] > 1 || c[1] - ny > 3) continue;
+      var kk = key(nx,ny,nz);
+      if(seen[kk]) continue;
+      seen[kk] = 1;
+      queue.push([nx, ny, nz]);
+    }
+  }
+  if(!cands.length) return null;
+  var pick = cands[Math.floor(Math.random()*cands.length)];
+  monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
+  var mob = createMob(nextMobId++, pick[0]+0.5, pick[1], pick[2]+0.5, Math.round(CRAWLER_HP*0.95));
+  mob.cave = true; mob.dmg = 3;   // a little gentler than the surface at midnight: caves can have several
+  return mob;
+}
+
 function updateMonsters(dt, now){
   if(!isHost()){ syncMonstersFromHost(dt); return; }
-  var hostiles = monsters.filter(function(m){ return m.kind === "crawler"; });
+  var allCrawlers = monsters.filter(function(m){ return m.kind === "crawler"; });
+  var hostiles = allCrawlers.filter(function(m){ return !m.cave; });     // surface crawlers follow the day/night cycle
   var gloom = weather.state === 3 && weather.rain > 0.7;
   if(currentSunHeight > 0.12 && !gloom && hostiles.length){
     hostiles.forEach(removeMob);
@@ -1822,7 +1870,17 @@ function updateMonsters(dt, now){
     lastSpawnCheck = now;
     if(hostiles.length < dfc.cap && Math.random() < 0.85) spawnMob();
   }
-  var animalCount = monsters.length - hostiles.length;
+  /* cave crawlers: only while the player is deep underground; they vanish when the player returns to the surface */
+  var underground = playerUnderground();
+  var caveMobs = allCrawlers.filter(function(m){ return m.cave; });
+  caveMobs.forEach(function(m){
+    if(!underground || Math.hypot(m.x - player.pos.x, m.z - player.pos.z) > 36){ removeMob(m); }
+  });
+  if(underground && now - lastCaveSpawn > 5000 && caveMobs.filter(function(m){ return monsters.indexOf(m) >= 0; }).length < MAX_CAVE_MOBS){
+    lastCaveSpawn = now;
+    spawnCaveMob();
+  }
+  var animalCount = monsters.length - allCrawlers.length;
   if(animalCount < ANIMAL_TARGET && now-lastAnimalSpawn > (animalCount < 3 ? 1200 : 6000)){
     lastAnimalSpawn = now;
     spawnAnimal();
@@ -1838,7 +1896,8 @@ function updateMonsters(dt, now){
     var dxp = tg ? tg.x-mob.x : 0, dzp = tg ? tg.z-mob.z : 0;
     var distToTarget = best;
     var moveX=0, moveZ=0;
-    if(tg && distToTarget < 9){
+    var chaseRange = mob.cave ? 14 : 9;
+    if(tg && distToTarget < chaseRange && (!mob.cave || tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 6)){
       moveX = dxp/distToTarget; moveZ = dzp/distToTarget;
     } else {
       mob.wanderTimer -= dt;
@@ -1850,9 +1909,10 @@ function updateMonsters(dt, now){
     }
     var nx = mob.x + moveX*mob.speed*dt;
     var nz = mob.z + moveZ*mob.speed*dt;
-    var ngy = terrainHeightAt(nx,nz);
+    var ngy = mob.cave ? caveFloor(nx, nz, mob.y) : terrainHeightAt(nx,nz);
     var maxDrop = 3;
-    if(ngy>=SEA_LEVEL && !treeBlocks(nx,nz,ngy) && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5){
+    if(mob.cave ? (ngy >= 1 && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5)
+                : (ngy>=SEA_LEVEL && !treeBlocks(nx,nz,ngy) && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5)){
       mob.x=nx; mob.z=nz; mob.y=ngy;
     } else {
       mob.wanderAngle = Math.random()*Math.PI*2;
