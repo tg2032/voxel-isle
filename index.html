@@ -433,6 +433,7 @@
       <kbd>B</kbd><span>Cycle <b>cave darkness</b> — dark / normal / bright</span>
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
+      <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
     <div class="controls tcontrols">
@@ -538,7 +539,7 @@ var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond"};
 var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.arrows = "Arrows";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows";
 BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
@@ -1443,9 +1444,21 @@ function updateHungerUI(){
   lastHungerKey = Math.round(hunger*2);
 }
 function updateFoodInv(){
-  if(food.pork + food.beef + food.flesh <= 0){ foodInvEl.hidden = true; return; }
+  var apples = inventory.apple || 0;
+  if(food.pork + food.beef + food.flesh + apples <= 0){ foodInvEl.hidden = true; return; }
   foodInvEl.hidden = false;
-  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat";
+  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat"
+    + (apples > 0 ? " · Golden Apple <b>" + apples + "</b> · <b>G</b> to heal" : "");
+}
+function useApple(){
+  if(player.dead || (inventory.apple || 0) <= 0 || (player.hp >= player.maxHp && hunger >= HUNGER_MAX - 0.5)) return false;
+  inventory.apple--;
+  player.hp = Math.min(player.maxHp, player.hp + 10);
+  hunger = Math.min(HUNGER_MAX, hunger + 6);
+  sfx.play("eat");
+  updateHearts(); updateHungerUI(); updateFoodInv();
+  showToast("The golden apple restored your health");
+  return true;
 }
 function eatFood(){
   if(player.dead || hunger >= HUNGER_MAX - 0.5) return false;
@@ -2061,6 +2074,7 @@ window.addEventListener("keydown", function(e){
   if(e.code==="KeyB" && !e.repeat){ cycleCaveLight(); return; }
   if(e.code==="KeyK" && !e.repeat){ sfx.toggle(); return; }
   if(e.code==="KeyF" && !e.repeat && locked && !craftOpen){ eatFood(); return; }
+  if(e.code==="KeyG" && !e.repeat && locked && !craftOpen){ useApple(); return; }
   if((e.code==="KeyT" || e.code==="Enter") && !player.dead && locked && !craftOpen && net.room){ e.preventDefault(); openChat(); return; }
   if(e.code==="Escape" && chestOpen){ closeChest(); return; }
   if(e.code==="KeyC" && !player.dead && !chestOpen && (locked||craftOpen)){ toggleCraft(); return; }
@@ -2137,7 +2151,7 @@ var ITEMS = [
   {id:"chest", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2234,6 +2248,8 @@ var RECIPES = [
     cost:{diamond:3, wood:2}, done:function(){ return pickTier >= 4; }, apply:function(){ givePickaxe(4); } },
   { id:"chest", label:"Chest", desc:"Place it and use it to store your items (right-click / tap it)", icon:'<svg class="item" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="1.5" fill="#a0693a" stroke="#4a2f14" stroke-width="1.2"/><rect x="3" y="7" width="18" height="4.5" fill="#b47d46" stroke="#4a2f14" stroke-width="1.2"/><rect x="10.5" y="10" width="3" height="4" fill="#ffd24a" stroke="#4a2f14" stroke-width="0.8"/></svg>',
     cost:{wood:8}, once:false, apply:function(){ inventory.chest += 1; } },
+  { id:"apple", label:"Golden Apple", desc:"Restores 5 hearts and some hunger \u2014 press G (or the eat button) to use it", icon:'<svg class="item" viewBox="0 0 24 24"><circle cx="12" cy="14" r="7.5" fill="#f2c744" stroke="#8a6a10" stroke-width="1.3"/><path d="M12 7c0-2 1-3.5 3-4" fill="none" stroke="#5a8a2a" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="9.5" cy="12" rx="2" ry="3" fill="rgba(255,255,255,0.45)"/></svg>',
+    cost:{gold:3, leaves:2}, once:false, apply:function(){ inventory.apple += 1; updateFoodInv(); } },
   { id:"armor1", label:"Gold Armor", desc:"Takes 30% less damage from enemies", icon:ARMOR_ICON("#f2c744"),
     cost:{gold:8}, done:function(){ return armorTier >= 1; }, apply:function(){ armorTier = Math.max(armorTier,1); updateGear(); } },
   { id:"armor2", label:"Diamond Armor", desc:"Takes 55% less damage from enemies", icon:ARMOR_ICON("#5ee6ee"),
@@ -2367,7 +2383,7 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond"].map(function(t){
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","apple"].map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
@@ -2862,7 +2878,7 @@ function updateMining(dt){
     function(){ jmp.classList.remove("down"); keys.Space = false; });
   press($("tPlace"), doSecondary);
   press($("tCraft"), function(){ if(!player.dead) toggleCraft(); });
-  press($("tEat"), function(){ if(locked && !craftOpen) eatFood(); });
+  press($("tEat"), function(){ if(locked && !craftOpen && !eatFood()) useApple(); });
   press($("tPause"), function(){ releaseLock(); });
   press($("tRank"), function(){ showBoard(boardEl.hidden); });
   var chatBtn = $("tChat");
