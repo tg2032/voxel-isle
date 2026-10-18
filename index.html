@@ -1571,6 +1571,7 @@ function makeBar(){
   return g;
 }
 var BAR_HEIGHT = {crawler:1.85, pig:1.2, cow:1.4};
+var BOSS_HP = 160, BOSS_MIN = 100;   // a crawler whose max health is at least BOSS_MIN is the Night Warden (no extra sync field needed)
 function updateMobBars(){
   for(var i=0; i<monsters.length; i++){
     var m = monsters[i], bar = m.bar;
@@ -1579,7 +1580,7 @@ function updateMobBars(){
     var dx = m.x - player.pos.x, dz = m.z - player.pos.z;
     if(ratio >= 0.999 || m.health <= 0 || dx*dx + dz*dz > 26*26){ bar.visible = false; continue; }
     bar.visible = true;
-    bar.position.set(m.x, m.y + (BAR_HEIGHT[m.kind] || 1.5), m.z);
+    bar.position.set(m.x, m.y + (m.boss ? 3.5 : (BAR_HEIGHT[m.kind] || 1.5)), m.z);
     bar.quaternion.copy(camera.quaternion);
     var fill = bar.userData.fill;
     fill.scale.set(0.86 * ratio, 0.08, 1);
@@ -1699,6 +1700,21 @@ function createMob(id, x, y, z, health, kind){
   return mob;
 }
 
+var bossBodyMat = new THREE.MeshLambertMaterial({color:0x5b2a86}), bossHeadMat = new THREE.MeshLambertMaterial({color:0x44206a});
+function ensureBoss(mob){
+  if(mob.boss || mob.kind !== "crawler" || mob.maxHealth < BOSS_MIN) return;
+  mob.boss = true;
+  mob.group.scale.set(2.2, 2.2, 2.2);
+  mob.group.traverse(function(o){
+    if(!o.isMesh) return;
+    if(o.material === mobBodyMat || o.material === mobLimbMat) o.material = bossBodyMat;
+    else if(o.material === mobHeadMat) o.material = bossHeadMat;
+  });
+  showToast("A Night Warden has appeared! Defeat it for gold and diamonds");
+  sfx.play("mobdie");
+}
+var lastBossCheck = 0;
+
 function actorTargets(){
   var list = [];
   if(!player.dead) list.push({x:player.pos.x, y:player.pos.y, z:player.pos.z, peer:null});
@@ -1713,7 +1729,7 @@ function actorTargets(){
   return list;
 }
 
-function spawnMob(){
+function spawnMob(boss){
   var targets = actorTargets();
   if(!targets.length) return;
   var tg = targets[Math.floor(Math.random()*targets.length)];
@@ -1726,6 +1742,12 @@ function spawnMob(){
   if(gy < SEA_LEVEL || treeBlocks(x,z,gy)) return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
   var df = difficulty();
+  if(boss){
+    var b = createMob(nextMobId++, x, gy, z, BOSS_HP);
+    b.dmg = 7; b.speed = 1.7;
+    ensureBoss(b);
+    return;
+  }
   var mob = createMob(nextMobId++, x, gy, z, df.hp);
   mob.dmg = df.dmg; mob.speed *= df.speed;
 }
@@ -1773,7 +1795,9 @@ function damageMob(mob, amount, dirX, dirZ, byPeer){
   if(mob.health <= 0){
     sfx.at(hostile ? "mobdie" : "animal", mob.x, mob.y+1, mob.z, hostile ? undefined : {v:"die"});
     var loot;
-    if(hostile){
+    if(mob.boss){
+      loot = ["gold", "gold", "diamond", "diamond"];
+    } else if(hostile){
       loot = [MOB_LOOT[Math.floor(Math.random()*MOB_LOOT.length)]];
       if(Math.random()<0.4) loot.push(MOB_LOOT[Math.floor(Math.random()*MOB_LOOT.length)]);
       if(Math.random()<0.65) loot.push("flesh");
@@ -1821,6 +1845,7 @@ function syncMonstersFromHost(dt){
       if(!mob) mob = createMob(m[0], m[1], m[2], m[3], m[5], wantKind);
       mob.tx = m[1]; mob.ty = m[2]; mob.tz = m[3]; mob.tr = m[4]; mob.health = m[5];
       mob.maxHealth = isFiniteNum(m[7]) && m[7] > 0 ? m[7] : Math.max(mob.maxHealth, mob.health);
+      ensureBoss(mob);
     });
     monsters.slice().forEach(function(mob){
       if(!seen[mob.id]){
@@ -1950,6 +1975,11 @@ function updateMonsters(dt, now){
     lastSpawnCheck = now;
     if(hostiles.length < dfc.cap && Math.random() < 0.85) spawnMob();
   }
+  /* the Night Warden: at most one, only in the deepest part of the night */
+  if(dfc.nf >= 0.8 && now - lastBossCheck > 25000){
+    lastBossCheck = now;
+    if(!hostiles.some(function(m){ return m.boss; }) && Math.random() < 0.5) spawnMob(true);
+  }
   /* cave crawlers: only while the player is deep underground; they vanish when the player returns to the surface */
   var targets = actorTargets();
   var deep = targets.filter(function(t){ return t.y !== null && t.y !== undefined && undergroundAt(t.x, t.y, t.z); });   // every player below ground, not just the host
@@ -2009,7 +2039,7 @@ function updateMonsters(dt, now){
     if(moveX||moveZ) mob.group.rotation.y = Math.atan2(moveX,moveZ);
     animateMobLimbs(mob, dt, true);
 
-    if(tg && distToTarget < 1.15 && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 1.8) && now-mob.lastAttack > 750){
+    if(tg && distToTarget < (mob.boss ? 2.2 : 1.15) && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < (mob.boss ? 3 : 1.8)) && now-mob.lastAttack > (mob.boss ? 1100 : 750)){
       mob.lastAttack = now;
       var hitDmg = mob.dmg || CRAWLER_DMG;
       if(tg.peer === null) damagePlayer(hitDmg, dxp, dzp);
@@ -3257,7 +3287,7 @@ chatInputEl.addEventListener("keydown", function(e){
       var d = msg.data;
       if(msg.peer !== net.hostPeer || !d || d.to !== net.myPeer || !Array.isArray(d.loot)) return;
       if(!isFiniteNum(d.x) || !isFiniteNum(d.y) || !isFiniteNum(d.z)) return;
-      d.loot.slice(0,4).forEach(function(t){ if(MOB_LOOT.indexOf(t) >= 0 || Object.prototype.hasOwnProperty.call(FOODS, t)) spawnDrop(t, d.x, d.y+0.6, d.z); });
+      d.loot.slice(0,4).forEach(function(t){ if(MOB_LOOT.indexOf(t) >= 0 || t === "gold" || t === "diamond" || Object.prototype.hasOwnProperty.call(FOODS, t)) spawnDrop(t, d.x, d.y+0.6, d.z); });
       if(d.k === 1) recordKill();
     });
     net.room.on("pdmg", function(msg){
@@ -3364,7 +3394,7 @@ function updateMinimap(now){
   }
   drops.forEach(function(d){ mmDot(d.mesh.position.x, d.mesh.position.z, 1.4, "#ffd76a"); });
   monsters.forEach(function(m){
-    if(m.kind === "crawler") mmDot(m.x, m.z, 2.3, "#e5393a", "rgba(0,0,0,0.6)");
+    if(m.kind === "crawler") mmDot(m.x, m.z, m.boss ? 4 : 2.3, m.boss ? "#a43cf0" : "#e5393a", "rgba(0,0,0,0.6)");
     else mmDot(m.x, m.z, 2, m.kind === "pig" ? "#f7a8c4" : "#d1b48a", "rgba(0,0,0,0.5)");
   });
   Object.keys(avatars).forEach(function(id){

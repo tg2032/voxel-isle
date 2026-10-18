@@ -6,7 +6,7 @@ A single-file, Minecraft-like voxel game built with Three.js (r128). Open `index
 - Procedural island with trees, caves, sinkholes, gold and diamond ore, lava and a bedrock floor
 - Hold-to-mine, block placing, torches, chests (with treasure chests hidden in caves)
 - Crafting: swords, bows, pickaxes, armor and shields in wood/stone/gold/diamond tiers
-- Day/night cycle with harder enemies in the dark, cave crawlers underground, enemy health bars
+- Day/night cycle with harder enemies in the dark, cave crawlers underground, enemy health bars, and the Night Warden boss at deep night (drops gold and diamonds)
 - Touch controls for phones and tablets
 - Multiplayer (when hosted as a Claude artifact): shared world edits, chat, shared chests, and other players visibly wearing their gear
 
