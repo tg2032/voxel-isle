@@ -2920,6 +2920,40 @@ function makePlayerMesh(hue, name){
   return group;
 }
 
+/* other players show their gear: armor, shield, and the tool in hand (sent as [sword, armor, shield, selected slot, pickaxe]) */
+var GEAR_MATS = {};
+function gearMat(c){ return GEAR_MATS[c] || (GEAR_MATS[c] = new THREE.MeshLambertMaterial({color:c})); }
+function parseGear(g){
+  if(!Array.isArray(g) || g.length !== 5) return null;
+  for(var i=0; i<5; i++) if(!Number.isInteger(g[i]) || g[i] < 0) return null;
+  if(g[0] > 2 || g[1] > 2 || g[2] > 2 || g[4] > 4 || g[3] >= ITEMS.length) return null;
+  return g;
+}
+function applyAvatarGear(av, g){
+  var sig = g ? g.join(",") : "";
+  if(av.gearSig === sig) return;
+  av.gearSig = sig;
+  (av.gearParts || []).forEach(function(o){ if(o.parent) o.parent.remove(o); o.geometry.dispose(); });
+  av.gearParts = [];
+  if(!g) return;
+  var L = av.mesh.userData.limbs;
+  function add(parent, w,h,d, color, x,y,z){
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), gearMat(color));
+    m.position.set(x,y,z); parent.add(m); av.gearParts.push(m); return m;
+  }
+  var held = ITEMS[g[3]] ? ITEMS[g[3]].id : "";
+  if(g[1] > 0){ add(av.mesh, 0.58,0.5,0.38, TIER_COLOR[g[1]], 0,0.82,0); add(av.mesh, 0.47,0.14,0.47, TIER_COLOR[g[1]], 0,1.56,0); }   // chestplate + helmet
+  if(g[2] > 0) add(L.armL, 0.05,0.4,0.3, TIER_COLOR[g[2]], -0.11,-0.02,0.1);                                                        // shield
+  if(held === "sword") add(L.armR, 0.05,0.05,0.55, TIER_COLOR[g[0]], 0,-0.28,0.32);
+  else if(held === "pickaxe"){ add(L.armR, 0.04,0.04,0.5, 0x6b4a2a, 0,-0.28,0.28); add(L.armR, 0.3,0.06,0.06, PICK_COLOR[g[4]], 0,-0.28,0.52); }
+  else if(held === "bow") add(L.armR, 0.03,0.5,0.03, 0xc9a875, 0,-0.28,0.22);
+}
+function disposeAvatar(av){
+  av.mesh.traverse(function(o){
+    if(o.isMesh){ o.geometry.dispose(); }
+    else if(o.isSprite){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  });
+}
 function angleLerp(a,b,t){
   var d = ((b-a+Math.PI) % (Math.PI*2) + Math.PI*2) % (Math.PI*2) - Math.PI;
   return a + d*t;
@@ -2977,10 +3011,11 @@ function updateAvatars(dt){
     var L = m.userData.limbs;
     L.legL.rotation.x = sw; L.legR.rotation.x = -sw;
     L.armL.rotation.x = -sw; L.armR.rotation.x = sw;
+    applyAvatarGear(av, parseGear(pr.g));
     m.visible = !pr.dead;
   });
   Object.keys(avatars).forEach(function(id){
-    if(!seen[id]){ scene.remove(avatars[id].mesh); delete avatars[id]; }
+    if(!seen[id]){ scene.remove(avatars[id].mesh); disposeAvatar(avatars[id]); delete avatars[id]; }
   });
 }
 
@@ -2992,7 +3027,8 @@ function sendPresence(){
     z: Math.round(player.pos.z*100)/100,
     yaw: Math.round(player.yaw*100)/100,
     dead: player.dead,
-    host: net.canHost
+    host: net.canHost,
+    g: [swordTier, armorTier, shieldTier, selected, pickTier]
   };
   if(net.hostPeer !== null && net.hostPeer === net.myPeer){
     patch.mobs = monsters.map(function(m){
