@@ -394,7 +394,7 @@
       <kbd>W A S D</kbd><span><b>Move</b> around the isle</span>
       <kbd>Mouse</kbd><span><b>Look</b> — click locks the view</span>
       <kbd>Space</kbd><span><b>Jump</b></span>
-      <kbd>Left click</kbd><span><b>Break</b> a block, <b>swing</b> the sword, or <b>fire</b> the bow</span>
+      <kbd>Left click</kbd><span><b>Hold</b> to break a block (takes time), <b>swing</b> the sword, or <b>fire</b> the bow</span>
       <kbd>Right click</kbd><span><b>Place</b> the selected block — walk over drops to restock it</span>
       <kbd>1–6</kbd><span><b>Select</b> a block from the hotbar</span>
       <kbd>7 / 8</kbd><span><b>Equip</b> the sword or bow, once crafted</span>
@@ -404,7 +404,7 @@
       <kbd>Tab</kbd><span>Hold to see the <b>ranking</b></span>
       <kbd>M</kbd><span>Show or hide the <b>minimap</b></span>
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
-      <kbd>F</kbd><span><b>Eat</b> pork or flesh when you are hungry</span>
+      <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
     <div class="controls tcontrols">
@@ -1819,23 +1819,32 @@ function caveFloor(x, z, fromY){
   }
   return -1;
 }
-function playerUnderground(){
-  if(caveDark < 0.8 || player.dead) return false;
-  var h = terrainHeightAt(player.pos.x, player.pos.z);
-  return h > 0 && player.pos.y < h - 3;
+function roofedAt(x, y, z){
+  var xi = Math.floor(x), zi = Math.floor(z);
+  for(var yy = Math.floor(y + 2); yy <= MAX_H + 22; yy++){
+    var t = blockAt.get(key(xi,yy,zi));
+    if(t && !isTreeBlock(t)) return true;   // trees do not count as a roof
+  }
+  return false;
 }
-function spawnCaveMob(){
-  /* breadth-first over walkable cave floor starting at the player, so the crawler always spawns somewhere it can walk from */
-  var sx = Math.floor(player.pos.x), sz = Math.floor(player.pos.z);
-  var sy = caveFloor(player.pos.x, player.pos.z, player.pos.y);
-  if(sy < 0) sy = Math.floor(player.pos.y);
+function undergroundAt(x, y, z){
+  var h = terrainHeightAt(x, z);
+  return h > 0 && y < h - 3 && roofedAt(x, y, z);
+}
+function playerUnderground(){ return !player.dead && undergroundAt(player.pos.x, player.pos.y, player.pos.z); }
+function spawnCaveMob(origin){
+  /* breadth-first over walkable cave floor starting at an underground player, so the crawler always spawns somewhere it can walk from */
+  origin = origin || {x:player.pos.x, y:player.pos.y, z:player.pos.z};
+  var sx = Math.floor(origin.x), sz = Math.floor(origin.z);
+  var sy = caveFloor(origin.x, origin.z, origin.y);
+  if(sy < 0) sy = Math.floor(origin.y);
   var queue = [[sx, sy, sz]], seen = {}, cands = [], head = 0;
   seen[key(sx,sy,sz)] = 1;
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   while(head < queue.length && queue.length < 600){
     var c = queue[head++];
     var d = Math.hypot(c[0]-sx, c[2]-sz);
-    if(d >= 6 && c[1] >= 3 && Math.abs(c[1] - player.pos.y) <= 5) cands.push(c);
+    if(d >= 6 && c[1] >= 3 && Math.abs(c[1] - origin.y) <= 5) cands.push(c);
     for(var k = 0; k < 4; k++){
       var nx = c[0] + dirs[k][0], nz = c[2] + dirs[k][1];
       if(nx < 2 || nz < 2 || nx > SIZE-2 || nz > SIZE-2) continue;
@@ -1871,21 +1880,28 @@ function updateMonsters(dt, now){
     if(hostiles.length < dfc.cap && Math.random() < 0.85) spawnMob();
   }
   /* cave crawlers: only while the player is deep underground; they vanish when the player returns to the surface */
-  var underground = playerUnderground();
+  var targets = actorTargets();
+  var deep = targets.filter(function(t){ return t.y !== null && t.y !== undefined && undergroundAt(t.x, t.y, t.z); });   // every player below ground, not just the host
   var caveMobs = allCrawlers.filter(function(m){ return m.cave; });
   caveMobs.forEach(function(m){
-    if(!underground || Math.hypot(m.x - player.pos.x, m.z - player.pos.z) > 36){ removeMob(m); }
+    var near = deep.some(function(t){ return Math.hypot(m.x - t.x, m.z - t.z) <= 36; });
+    if(!near) removeMob(m);
   });
-  if(underground && now - lastCaveSpawn > 5000 && caveMobs.filter(function(m){ return monsters.indexOf(m) >= 0; }).length < MAX_CAVE_MOBS){
-    lastCaveSpawn = now;
-    spawnCaveMob();
+  if(deep.length && now - lastCaveSpawn > 5000){
+    var needy = deep.filter(function(t){
+      return caveMobs.filter(function(m){ return monsters.indexOf(m) >= 0 && Math.hypot(m.x - t.x, m.z - t.z) <= 24; }).length < MAX_CAVE_MOBS;
+    });
+    if(needy.length){
+      lastCaveSpawn = now;
+      var t = needy[Math.floor(Math.random()*needy.length)];
+      spawnCaveMob({x:t.x, y:t.y, z:t.z});
+    }
   }
   var animalCount = monsters.length - allCrawlers.length;
   if(animalCount < ANIMAL_TARGET && now-lastAnimalSpawn > (animalCount < 3 ? 1200 : 6000)){
     lastAnimalSpawn = now;
     spawnAnimal();
   }
-  var targets = actorTargets();
   monsters.forEach(function(mob){
     if(mob.kind !== "crawler"){ updateAnimal(mob, dt, now); return; }
     var tg = null, best = Infinity;
@@ -3376,11 +3392,7 @@ function updateCaveDark(dt){
   caveScanT -= dt;
   if(caveScanT <= 0){
     caveScanT = 0.2;
-    var x = Math.floor(player.pos.x), z = Math.floor(player.pos.z), blocked = false;
-    for(var y = Math.floor(player.pos.y + 2); y <= MAX_H + 22; y++){
-      var t = blockAt.get(key(x,y,z));
-      if(t && !isTreeBlock(t)){ blocked = true; break; }   // trees do not count as a roof
-    }
+    var blocked = roofedAt(player.pos.x, player.pos.y, player.pos.z);
     caveTarget = blocked ? 1 : 0;
     if(blocked && !caveToldDark && caveDark > 0.5){ caveToldDark = true; showToast("It's dark down here \u2014 place torches"); }
   }
