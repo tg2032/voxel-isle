@@ -2225,6 +2225,24 @@ try{
   });
 }catch(e){}
 function saveChests(){ try{ localStorage.setItem(CHESTS_KEY, JSON.stringify(chestData)); }catch(e){} }
+/* chest contents are shared through the db so everybody in the world sees the same chest */
+function pushChest(k){
+  if(!net.db) return;
+  var c = chestData[k] || {}, items = {};
+  CHEST_ITEMS.forEach(function(t){ if(c[t] > 0) items[t] = c[t]; });
+  net.db.doc("chests/" + k.replace(/,/g, "_")).set({k:k, items:items}).catch(function(){});
+}
+function applyRemoteChest(d){
+  if(!d || typeof d.k !== "string" || !d.items || typeof d.items !== "object") return;
+  var p = d.k.split(",").map(Number);
+  if(p.length !== 3 || !p.every(Number.isInteger) || p[0] < 0 || p[0] >= SIZE || p[2] < 0 || p[2] >= SIZE || p[1] < 0 || p[1] > MAX_H + 30) return;
+  var clean = {};
+  CHEST_ITEMS.forEach(function(t){ var n = Math.floor(d.items[t]); if(n > 0) clean[t] = Math.min(n, 99999); });
+  chestData[d.k] = clean;
+  delete worldChestKeys[d.k];
+  saveChests();
+  if(chestOpen && chestCur === d.k) renderChest();
+}
 function chestRand(x,y,z,n){ return hash2(x*12.9898 + y*78.233 + n*37.719, z*4.1414 + n*11.13); }
 function lootFor(x,y,z){
   var loot = { gold: 2 + Math.floor(chestRand(x,y,z,1)*5), torch: 3 + Math.floor(chestRand(x,y,z,2)*6), arrows: 4 + Math.floor(chestRand(x,y,z,3)*8) };
@@ -2247,6 +2265,7 @@ function takeChestContents(k){
   var c = chestContents(k), any = false;
   Object.keys(c).forEach(function(t){ if(c[t] > 0){ packAdd(t, c[t]); any = true; } });
   delete chestData[k]; saveChests();
+  if(net.db) net.db.doc("chests/" + k.replace(/,/g, "_")).set({k:k, items:{}}).catch(function(){});
   updateHotbarCounts(); updateGear();
   if(any) showToast("The chest's contents went into your backpack");
 }
@@ -2279,7 +2298,7 @@ function moveItem(t, n, fromChest){
   if(n <= 0) return;
   if(fromChest){ n = Math.min(n, c[t] || 0); if(n <= 0) return; c[t] -= n; if(c[t] <= 0) delete c[t]; packAdd(t, n); }
   else { n = Math.min(n, packCount(t)); if(n <= 0) return; packAdd(t, -n); c[t] = (c[t] || 0) + n; }
-  saveChests(); updateHotbarCounts(); updateGear(); renderChest();
+  saveChests(); pushChest(chestCur); updateHotbarCounts(); updateGear(); renderChest();
 }
 function openChest(x, y, z){
   if(chestOpen || craftOpen) return;
@@ -3268,6 +3287,12 @@ chatInputEl.addEventListener("keydown", function(e){
         if(ch.type==="removed" || ch.doc.metadata.hasPendingWrites) return;
         var d = ch.doc.data();
         if(d) applyRemoteEdit(d.x, d.y, d.z, d.t);
+      });
+    }, function(){});
+    net.db.collection("chests").limit(500).onSnapshot(function(snap){
+      snap.docChanges().forEach(function(ch){
+        if(ch.type==="removed" || ch.doc.metadata.hasPendingWrites) return;
+        applyRemoteChest(ch.doc.data());
       });
     }, function(){});
   }
