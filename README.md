@@ -7,13 +7,13 @@ A single-file, Minecraft-like voxel game built with Three.js (r128). Open `index
 - Hold-to-mine, block placing, torches, chests (with treasure chests hidden in caves)
 - Crafting: swords, bows, pickaxes, armor and shields in wood/stone/gold/diamond tiers
 - Day/night cycle with harder enemies in the dark, cave crawlers underground, enemy health bars, golden apples (G to heal), and the Night Warden boss at deep night (drops gold and diamonds)
-- Touch controls for phones and tablets
+- Shift to sprint (costs hunger); touch controls for phones and tablets
 - Multiplayer (when hosted as a Claude artifact): shared world edits, chat, shared chests, and other players visibly wearing their gear
 
 ## Controls
 | Input | Action |
 | --- | --- |
-| W A S D / Space | Move / jump |
+| W A S D / Space / Shift | Move / jump / sprint |
 | Left click (hold) | Mine, swing sword, fire bow |
 | Right click | Place block / open chest |
 | 1–9, 0, - | Hotbar |

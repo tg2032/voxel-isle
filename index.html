@@ -420,6 +420,7 @@
       <kbd>W A S D</kbd><span><b>Move</b> around the isle</span>
       <kbd>Mouse</kbd><span><b>Look</b> — click locks the view</span>
       <kbd>Space</kbd><span><b>Jump</b></span>
+      <kbd>Shift</kbd><span><b>Sprint</b> while moving forward (uses more hunger)</span>
       <kbd>Left click</kbd><span><b>Hold</b> to break a block (takes time), <b>swing</b> the sword, or <b>fire</b> the bow</span>
       <kbd>Right click</kbd><span><b>Place</b> the selected block — walk over drops to restock it</span>
       <kbd>1–6</kbd><span><b>Select</b> a block from the hotbar</span>
@@ -1474,7 +1475,7 @@ function eatFood(){
 function updateVitals(dt){
   if(player.dead) return;
   var moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
-  hunger = Math.max(0, hunger - dt*(0.015 + (moving ? 0.012 : 0)));
+  hunger = Math.max(0, hunger - dt*(0.015 + (moving ? 0.012 : 0) + (sprinting ? 0.03 : 0)));
   if(hunger >= 16 && player.hp < player.maxHp){
     regenTimer += dt;
     if(regenTimer >= 4){
@@ -3677,6 +3678,7 @@ function updateAmbient(now){
 /* ---------- main loop ---------- */
 var clock = new THREE.Clock();
 var SPEED = 4.6, GRAVITY = -22, JUMP = 8;
+var sprinting = false;
 var stepDist = 0;
 var airPeakY = 0, waterTick = 0, wasInWater = false;
 
@@ -3742,6 +3744,14 @@ function update(dt){
   var inLava = isInLava();
   var inW = isInWater() || inLava;
   var speedMul = inW ? 0.55 : 1;
+  /* hold Shift while moving forward to sprint; it costs hunger and stops when you are nearly starving */
+  sprinting = !!((keys.ShiftLeft || keys.ShiftRight) && forward > 0 && !inW && !player.dead && hunger > 6);
+  if(sprinting) speedMul *= 1.45;
+  var wantFov = sprinting ? 76 : 70;
+  if(Math.abs(camera.fov - wantFov) > 0.05){
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt*8);
+    camera.updateProjectionMatrix();
+  }
   player.vel.x = dx*SPEED*speedMul;
   player.vel.z = dz*SPEED*speedMul;
 
