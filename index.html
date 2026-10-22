@@ -438,7 +438,7 @@
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
     <div class="controls tcontrols">
-      <b>Left stick</b><span><b>Move</b> — drag anywhere on the left side</span>
+      <b>Left stick</b><span><b>Move</b> — drag anywhere on the left side; push to the edge to sprint</span>
       <b>Drag</b><span><b>Look</b> around with the right side of the screen</span>
       <b>Tap</b><span><b>Place</b> the selected block where you tap</span>
       <b>⛏</b><span><b>Break</b> (hold until it crumbles) / swing / fire — drag to aim</span>
@@ -2064,7 +2064,7 @@ function updateMonsters(dt, now){
 
 var touchMode = false;
 try{ touchMode = window.matchMedia("(pointer: coarse)").matches; }catch(e){}
-var tMove = {x:0, y:0}, tAttackHeld = false;
+var tMove = {x:0, y:0}, tAttackHeld = false, tSprint = false;   // tSprint: stick pushed to its rim
 
 var keys = {};
 window.addEventListener("keydown", function(e){
@@ -2104,7 +2104,7 @@ function requestLock(){
   else renderer.domElement.requestPointerLock();
 }
 function releaseLock(){
-  if(touchMode){ locked = false; tMove.x = tMove.y = 0; tAttackHeld = false; keys.Space = false; syncOverlay(); }
+  if(touchMode){ locked = false; tMove.x = tMove.y = 0; tSprint = false; tAttackHeld = false; keys.Space = false; syncOverlay(); }
   else if(document.pointerLockElement) document.exitPointerLock();
 }
 if(touchMode){ startBtn.textContent = "TAP TO PLAY"; }
@@ -2851,7 +2851,8 @@ function updateMining(dt){
     if(d > R){ dx *= R/d; dy *= R/d; d = R; }
     knob.style.transform = "translate(" + dx + "px," + dy + "px)";
     var m = d / R;
-    if(m < 0.15){ tMove.x = tMove.y = 0; return; }
+    if(m < 0.15){ tMove.x = tMove.y = 0; tSprint = false; return; }
+    tSprint = m >= 0.97 && -dy / d > 0.5;
     m = Math.min(1, (m - 0.15) / 0.65);
     tMove.x = dx / d * m;
     tMove.y = -dy / d * m;
@@ -2862,7 +2863,7 @@ function updateMining(dt){
     base.classList.add("on");
     stick(e);
   }, stick, function(){
-    tMove.x = tMove.y = 0;
+    tMove.x = tMove.y = 0; tSprint = false;
     base.classList.remove("on");
     knob.style.transform = "";
     homeBase();
@@ -3745,7 +3746,7 @@ function update(dt){
   var inW = isInWater() || inLava;
   var speedMul = inW ? 0.55 : 1;
   /* hold Shift while moving forward to sprint; it costs hunger and stops when you are nearly starving */
-  sprinting = !!((keys.ShiftLeft || keys.ShiftRight) && forward > 0 && !inW && !player.dead && hunger > 6);
+  sprinting = !!((keys.ShiftLeft || keys.ShiftRight || tSprint) && forward > 0 && !inW && !player.dead && hunger > 6);
   if(sprinting) speedMul *= 1.45;
   var wantFov = sprinting ? 76 : 70;
   if(Math.abs(camera.fov - wantFov) > 0.05){
