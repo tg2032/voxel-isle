@@ -382,6 +382,7 @@
   body.touch.playing #touchUI{ display:block; }
   body.touch #logo, body.touch #hint{ display:none; }
   body.touch #hud{ z-index:4; }
+  body.touch #clock{ pointer-events:auto; }   /* tap the clock to toggle the position readout */
   #touchUI .zone{ position:fixed; touch-action:none; z-index:3; }
   #tLook{ left:0; right:0; top:0; bottom:0; }
   #tMove{ left:0; top:30%; bottom:0; width:42%; z-index:4; }
@@ -436,7 +437,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
-      <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading</span>
+      <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading (on a phone, tap the clock)</span>
       <kbd>Emerald</kbd><span><b>Emerald ore</b> hides deep underground — craft a charm (5 emeralds + 2 diamonds) that saves you from death once</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
@@ -3875,6 +3876,7 @@ function togglePos(){
   try{ localStorage.setItem("voxelPos", posOn ? "1" : "0"); }catch(e){}
   if(!posOn) posEl.hidden = true;
 }
+document.getElementById("clock").addEventListener("click", function(){ if(document.body.classList.contains("touch")) togglePos(); });
 function updatePos(dt){
   if(!posOn) return;
   posT -= dt;
