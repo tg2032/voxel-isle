@@ -54,6 +54,7 @@
     background:rgba(20,22,26,0.35); border:1px solid var(--line);
     padding:6px 10px; border-radius:8px; max-width:240px; line-height:1.5;
   }
+  #posPill{ font-size:11px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,0.7); background:rgba(20,22,26,0.4); border:1px solid var(--line); padding:4px 10px; border-radius:999px; pointer-events:none; font-variant-numeric:tabular-nums; }
   #topright{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
   #clock{
     display:flex; align-items:center; gap:8px; pointer-events:none;
@@ -435,6 +436,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
+      <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading</span>
       <kbd>Emerald</kbd><span><b>Emerald ore</b> hides deep underground — craft a charm (5 emeralds + 2 diamonds) that saves you from death once</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
@@ -501,6 +503,7 @@
       <div id="clock"><div id="clockDial"><div id="clockSun"></div></div><div id="clockTime" class="display">06:00</div></div>
       <div id="wxPill" hidden></div>
       <div id="dangerPill" hidden></div>
+      <div id="posPill" hidden></div>
       <div id="sndPill" hidden>Sound off (K)</div>
       <div id="myStats" hidden></div>
       <div id="online" hidden><span class="odot"></span><span id="onlineText">1 online</span></div>
@@ -2090,6 +2093,7 @@ window.addEventListener("keydown", function(e){
   keys[e.code]=true;
   if(e.code==="KeyM" && !e.repeat){ mmEl.hidden = !mmEl.hidden; return; }
   if(e.code==="KeyB" && !e.repeat){ cycleCaveLight(); return; }
+  if(e.code==="KeyV" && !e.repeat){ togglePos(); return; }
   if(e.code==="KeyK" && !e.repeat){ sfx.toggle(); return; }
   if(e.code==="KeyF" && !e.repeat && locked && !craftOpen){ eatFood(); return; }
   if(e.code==="KeyG" && !e.repeat && locked && !craftOpen){ useApple(); return; }
@@ -3862,6 +3866,27 @@ function update(dt){
   camera.position.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
 }
 
+/* V toggles a small position readout: block coordinates, depth below sea level and the compass heading */
+var COMPASS = ["N","NE","E","SE","S","SW","W","NW"];
+var posEl = document.getElementById("posPill"), posOn = false, posT = 0;
+try{ posOn = localStorage.getItem("voxelPos") === "1"; }catch(e){}
+function togglePos(){
+  posOn = !posOn; posT = 0;
+  try{ localStorage.setItem("voxelPos", posOn ? "1" : "0"); }catch(e){}
+  if(!posOn) posEl.hidden = true;
+}
+function updatePos(dt){
+  if(!posOn) return;
+  posT -= dt;
+  if(posT > 0) return;
+  posT = 0.2;
+  var fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  var h = COMPASS[(Math.round(Math.atan2(fx, -fz) / (Math.PI/4)) + 8) % 8];
+  var depth = Math.floor(player.pos.y) - SEA_LEVEL;
+  posEl.textContent = "X " + Math.floor(player.pos.x) + "  Y " + Math.floor(player.pos.y) + "  Z " + Math.floor(player.pos.z) + "  " + h + (depth < 0 ? "  (" + (-depth) + " below sea)" : "");
+  posEl.hidden = false;
+}
+
 var TARGET_NAMES = {gold_ore:"Gold ore", diamond_ore:"Diamond ore", emerald_ore:"Emerald ore", bedrock:"Bedrock", lava:"Lava"};
 var targetEl = document.getElementById("targetLabel"), targetT = 0, targetShown = "";
 function updateTargetLabel(dt){
@@ -3891,6 +3916,7 @@ function animate(){
   if(tAttackHeld || primaryHeld){ doPrimary(); updateMining(dt); } else resetMining();
   update(dt);
   updateTargetLabel(dt);
+  updatePos(dt);
   updateWeather(dt);
   updateSky(dt);
   updateRain(dt);

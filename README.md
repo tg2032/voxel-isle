@@ -19,5 +19,6 @@ A single-file, Minecraft-like voxel game built with Three.js (r128). Open `index
 | 1–9, 0, - | Hotbar |
 | C | Crafting |
 | B | Cycle cave brightness |
+| V | Position / depth / compass readout |
 
 The game is a single HTML file with no build step.
