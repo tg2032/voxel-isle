@@ -435,6 +435,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
+      <kbd>Emerald</kbd><span><b>Emerald ore</b> hides deep underground — craft a charm (5 emeralds + 2 diamonds) that saves you from death once</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
     </div>
     <div class="controls tcontrols">
@@ -533,15 +534,15 @@
 var SIZE = 44;                // island footprint (SIZE x SIZE)
 var SEA_LEVEL = 4;             // top y of water surface
 var MAX_H = 13;
-var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest"];
+var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest","emerald_ore"];
 var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest"];
 var UNBREAKABLE = {bedrock:true, lava:true};
-var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond"};
-var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8};
+var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald"};
+var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows";
-BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.chest = "#a0693a";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.charm = "Emerald Charm";
+BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -874,7 +875,7 @@ function clamp255(v){ return Math.max(0,Math.min(255, v|0)); }
 var CELLS = {
   grass_top:[0,0], grass_side:[1,0], dirt:[2,0], stone:[3,0],
   sand:[0,1], wood_top:[1,1], wood_side:[2,1], leaves:[3,1],
-  torch:[0,2], gold_ore:[1,2], diamond_ore:[2,2], bedrock:[3,2], lava:[0,3], chest:[1,3]
+  torch:[0,2], gold_ore:[1,2], diamond_ore:[2,2], bedrock:[3,2], lava:[0,3], chest:[1,3], emerald_ore:[2,3]
 };
 
 speckle(CELLS.grass_top[0],CELLS.grass_top[1], [96,168,72], 14);
@@ -979,6 +980,7 @@ function oreFlecks(cell, rgb){
 }
 stoneBase(CELLS.gold_ore);    oreFlecks(CELLS.gold_ore, [246,204,64]);
 stoneBase(CELLS.diamond_ore); oreFlecks(CELLS.diamond_ore, [92,226,232]);
+stoneBase(CELLS.emerald_ore); oreFlecks(CELLS.emerald_ore, [46,224,106]);
 (function(){
   var ox = CELLS.bedrock[0]*CELL, oy = CELLS.bedrock[1]*CELL;
   for(var y=0;y<CELL;y++) for(var x=0;x<CELL;x++){
@@ -1088,7 +1090,8 @@ var GEOMETRY = {
   diamond_ore: buildBlockGeometry("diamond_ore","diamond_ore","diamond_ore","diamond_ore","diamond_ore","diamond_ore"),
   bedrock:     buildBlockGeometry("bedrock","bedrock","bedrock","bedrock","bedrock","bedrock"),
   lava:        buildBlockGeometry("lava","lava","lava","lava","lava","lava"),
-  chest:       buildBlockGeometry("chest","chest","chest","chest","chest","chest")
+  chest:       buildBlockGeometry("chest","chest","chest","chest","chest","chest"),
+  emerald_ore: buildBlockGeometry("emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore")
 };
 
 /* ---------- world data ---------- */
@@ -1130,6 +1133,7 @@ function oreAt(x,y,z,h){
   if(y <= 2 && h >= 9 && lowestNeighbour(x,z) >= 5 && valueNoise(x*0.33 + y*2.1, z*0.33 + 40) > 0.7) return "lava";
   var r = hash2(x*3.17 + y*5.31, z*2.71 + y*7.13);
   if(y <= 3 && r > 0.984) return "diamond_ore";
+  if(y <= 2 && r > 0.962 && r <= 0.984) return "emerald_ore";
   if(y <= 7 && r < 0.03) return "gold_ore";
   return "stone";
 }
@@ -1502,8 +1506,9 @@ function flashVignette(){
   clearTimeout(flashTimer);
   flashTimer = setTimeout(function(){ vignetteEl.classList.remove("hit"); }, 220);
 }
+var invulnUntil = 0;   // a few seconds of grace after the Emerald Charm saves you
 function damagePlayer(amount, fromDX, fromDZ, quiet, cause){
-  if(player.dead) return;
+  if(player.dead || performance.now() < invulnUntil) return;
   lastCause = cause || "crawler";
   if(!quiet){
     var red = 1 - (1 - ARMOR_RED[armorTier]) * (1 - SHIELD_RED[shieldTier]);
@@ -1511,6 +1516,18 @@ function damagePlayer(amount, fromDX, fromDZ, quiet, cause){
   }
   sfx.play("hurt");
   player.hp = Math.max(0, player.hp-amount);
+  if(player.hp <= 0 && (inventory.charm || 0) > 0){   // the Emerald Charm shatters and saves you once
+    inventory.charm--;
+    player.hp = Math.ceil(player.maxHp / 2);
+    player.vel.set(0, 0, 0);
+    invulnUntil = performance.now() + 4000;
+    lavaTick = 0; drownTimer = 0; starveTimer = 0;
+    if(hunger < 6) hunger = 6;
+    oxygen = OXYGEN_MAX; updateOxygenUI();
+    updateGear(); updateHearts(); flashVignette();
+    showToast("Your Emerald Charm shattered and saved your life!");
+    return;
+  }
   if(!quiet){
     var len = Math.hypot(fromDX,fromDZ) || 1;
     player.vel.x += -(fromDX/len)*4.5;
@@ -2152,7 +2169,7 @@ var ITEMS = [
   {id:"chest", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2251,6 +2268,8 @@ var RECIPES = [
     cost:{wood:8}, once:false, apply:function(){ inventory.chest += 1; } },
   { id:"apple", label:"Golden Apple", desc:"Restores 5 hearts and some hunger \u2014 press G (or the eat button) to use it", icon:'<svg class="item" viewBox="0 0 24 24"><circle cx="12" cy="14" r="7.5" fill="#f2c744" stroke="#8a6a10" stroke-width="1.3"/><path d="M12 7c0-2 1-3.5 3-4" fill="none" stroke="#5a8a2a" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="9.5" cy="12" rx="2" ry="3" fill="rgba(255,255,255,0.45)"/></svg>',
     cost:{gold:3, leaves:2}, once:false, apply:function(){ inventory.apple += 1; updateFoodInv(); } },
+  { id:"charm", label:"Emerald Charm", desc:"Saves you from death once: you wake with half your health. Keep it in your pack", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v7c0 4.2-3.4 6.8-8 8.5-4.6-1.7-8-4.3-8-8.5V7z" fill="#2ee06a" stroke="#0e6a30" stroke-width="1.4"/><path d="M12 7l4 2.3v4.2c0 2.2-1.7 3.7-4 4.6-2.3-.9-4-2.4-4-4.6V9.3z" fill="#9ff5bd" stroke="#0e6a30" stroke-width="0.9"/></svg>',
+    cost:{emerald:5, diamond:2}, once:false, apply:function(){ inventory.charm += 1; updateGear(); } },
   { id:"armor1", label:"Gold Armor", desc:"Takes 30% less damage from enemies", icon:ARMOR_ICON("#f2c744"),
     cost:{gold:8}, done:function(){ return armorTier >= 1; }, apply:function(){ armorTier = Math.max(armorTier,1); updateGear(); } },
   { id:"armor2", label:"Diamond Armor", desc:"Takes 55% less damage from enemies", icon:ARMOR_ICON("#5ee6ee"),
@@ -2384,7 +2403,7 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","apple"].map(function(t){
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple"].map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
@@ -2491,6 +2510,8 @@ function updateGear(){
   var parts = [];
   if(inventory.gold > 0) parts.push("Gold <b>" + inventory.gold + "</b>");
   if(inventory.diamond > 0) parts.push("Diamond <b>" + inventory.diamond + "</b>");
+  if(inventory.emerald > 0) parts.push("Emerald <b>" + inventory.emerald + "</b>");
+  if(inventory.charm > 0) parts.push("Charm <b>" + inventory.charm + "</b>");
   if(swordTier) parts.push(TIER_NAME[swordTier] + " sword");
   if(armorTier) parts.push(TIER_NAME[armorTier] + " armor");
   if(shieldTier) parts.push(TIER_NAME[shieldTier] + " shield");
@@ -2732,12 +2753,12 @@ selectSlot(0);
 
 /* ---------- mining: blocks take time to break, so a single click never removes one ---------- */
 function mineSpeed(type, item){
-  var rock = type === "stone" || type === "gold_ore" || type === "diamond_ore";
+  var rock = type === "stone" || type === "gold_ore" || type === "diamond_ore" || type === "emerald_ore";
   var pick = item.id === "pickaxe" ? (rock ? PICK_ROCK : PICK_SOFT)[pickTier] : 1;   // only while the pickaxe is in hand
   return Math.max(pick, item.id === "sword" ? 1.3 : 1);
 }
 function mineNeed(type, item){ return (HARDNESS[type] || 1) / mineSpeed(type, item); }
-var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4, gold_ore:3.0, diamond_ore:4.2, chest:1.2};
+var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4, gold_ore:3.0, diamond_ore:4.2, emerald_ore:4.6, chest:1.2};
 var primaryHeld = false;
 var mine = { x:0, y:0, z:0, t:0, active:false, swing:0, probe:0 };
 var mineBarEl = document.getElementById("mineBar"), mineFillEl = document.getElementById("mineFill");
@@ -3361,7 +3382,7 @@ var mmTerrain = document.createElement("canvas");
 mmTerrain.width = MM_SIZE * mmDpr; mmTerrain.height = MM_SIZE * mmDpr;
 var mmTerrainCtx = mmTerrain.getContext("2d");
 var mmLast = 0;
-var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], bedrock:[60,60,64], lava:[230,90,20] };
+var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], emerald_ore:[46,224,106], bedrock:[60,60,64], lava:[230,90,20] };
 
 function mmPaintColumn(x, z){
   var top = -1, type = null;
@@ -3507,8 +3528,8 @@ var sfx = (function(){
       noise({dur:0.14, vol:0.5*k, type:"lowpass", f:hard?2600:(wood?1100:1500), f2:hard?500:280, dest:d});
       if(hard) noise({dur:0.05, vol:0.25*k, type:"highpass", f:2600, dest:d});
       tone({f:wood?160:(hard?220:120), f2:60, dur:0.1, type:wood?"square":"triangle", vol:0.26*k, lp:650, dest:d});
-      if(v === "gold_ore" || v === "diamond_ore"){   // a bright chime for ore
-        var base = v === "diamond_ore" ? 1318 : 988;
+      if(v === "gold_ore" || v === "diamond_ore" || v === "emerald_ore"){   // a bright chime for ore
+        var base = v === "diamond_ore" ? 1318 : (v === "emerald_ore" ? 1175 : 988);
         tone({f:base, dur:0.22, vol:0.2*k, delay:0.05, dest:d});
         tone({f:base*1.5, dur:0.3, vol:0.16*k, delay:0.13, dest:d});
       }
@@ -3841,7 +3862,7 @@ function update(dt){
   camera.position.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
 }
 
-var TARGET_NAMES = {gold_ore:"Gold ore", diamond_ore:"Diamond ore", bedrock:"Bedrock", lava:"Lava"};
+var TARGET_NAMES = {gold_ore:"Gold ore", diamond_ore:"Diamond ore", emerald_ore:"Emerald ore", bedrock:"Bedrock", lava:"Lava"};
 var targetEl = document.getElementById("targetLabel"), targetT = 0, targetShown = "";
 function updateTargetLabel(dt){
   targetT -= dt;
