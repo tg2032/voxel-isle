@@ -437,6 +437,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
+      <kbd>=</kbd><span><b>Seeds</b> — find them in grass, or craft them from leaves. Plant on grass or dirt; ripe wheat is food</span>
       <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading (on a phone, tap the clock)</span>
       <kbd>Emerald</kbd><span><b>Emerald ore</b> hides deep underground — craft a charm (5 emeralds + 2 diamonds) that saves you from death once</span>
       <kbd>Esc</kbd><span>Release the mouse</span>
@@ -538,15 +539,15 @@
 var SIZE = 44;                // island footprint (SIZE x SIZE)
 var SEA_LEVEL = 4;             // top y of water surface
 var MAX_H = 13;
-var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest","emerald_ore"];
-var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest"];
+var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest","emerald_ore","sprout","wheat"];
+var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest","sprout","wheat"];
 var UNBREAKABLE = {bedrock:true, lava:true};
-var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald"};
-var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a};
+var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald", wheat:"wheat"};
+var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.charm = "Emerald Charm";
-BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.chest = "#a0693a";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm";
+BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -1082,6 +1083,40 @@ function buildTorchGeometry(){
   return geo;
 }
 
+/* crops: two crossed, alpha-tested quads using a small pixel-art texture of their own (left half = seedling, right half = ripe wheat) */
+var cropCanvas = document.createElement("canvas"); cropCanvas.width = 64; cropCanvas.height = 32;
+(function(){
+  var c = cropCanvas.getContext("2d");
+  function px(x, y, w, h, col){ c.fillStyle = col; c.fillRect(x, y, w, h); }
+  for(var i=0; i<5; i++){            // seedling: a few short green shoots with a lighter tip
+    var x = 4 + i*6 + (i%2)*2, h = 8 + (i%3)*2;
+    px(x, 32-h, 2, h, "#4f9a2c"); px(x, 32-h, 2, 2, "#8fd24f");
+  }
+  for(var j=0; j<6; j++){            // ripe wheat: tall golden stalks with heads
+    var sx = 32 + 3 + j*5 + (j%2), sh = 22 + (j%3)*3;
+    px(sx, 32-sh, 1, sh, "#b59a3c");
+    px(sx-1, 32-sh-1, 3, 7, "#e8c64a"); px(sx, 32-sh-3, 1, 3, "#f4dc7a");
+  }
+})();
+var cropTexture = new THREE.CanvasTexture(cropCanvas);
+cropTexture.magFilter = THREE.NearestFilter; cropTexture.minFilter = THREE.NearestFilter;
+var cropMaterial = new THREE.MeshLambertMaterial({map:cropTexture, alphaTest:0.5, side:THREE.DoubleSide});
+function buildCropGeometry(u0, u1, h){
+  var geo = new THREE.BufferGeometry();
+  var d = 0.5, top = h - 0.5;
+  var pos = new Float32Array([
+    -d,-0.5,0,  d,-0.5,0,  d,top,0,  -d,top,0,
+    0,-0.5,-d,  0,-0.5,d,  0,top,d,  0,top,-d
+  ]);
+  var uv = new Float32Array([u0,0, u1,0, u1,h, u0,h,  u0,0, u1,0, u1,h, u0,h]);
+  var nrm = new Float32Array([0,0,1,0,0,1,0,0,1,0,0,1,  1,0,0,1,0,0,1,0,0,1,0,0]);
+  geo.setAttribute("position", new THREE.BufferAttribute(pos,3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv,2));
+  geo.setAttribute("normal", new THREE.BufferAttribute(nrm,3));
+  geo.setIndex([0,1,2, 0,2,3, 4,5,6, 4,6,7]);
+  return geo;
+}
+
 var GEOMETRY = {
   grass: buildBlockGeometry("grass_side","grass_side","grass_top","dirt","grass_side","grass_side"),
   dirt:  buildBlockGeometry("dirt","dirt","dirt","dirt","dirt","dirt"),
@@ -1095,7 +1130,9 @@ var GEOMETRY = {
   bedrock:     buildBlockGeometry("bedrock","bedrock","bedrock","bedrock","bedrock","bedrock"),
   lava:        buildBlockGeometry("lava","lava","lava","lava","lava","lava"),
   chest:       buildBlockGeometry("chest","chest","chest","chest","chest","chest"),
-  emerald_ore: buildBlockGeometry("emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore")
+  emerald_ore: buildBlockGeometry("emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore"),
+  sprout: buildCropGeometry(0, 0.5, 0.45),
+  wheat:  buildCropGeometry(0.5, 1, 0.95)
 };
 
 /* ---------- world data ---------- */
@@ -1218,7 +1255,7 @@ BLOCK_TYPES.forEach(function(t){
   var count = 0;
   blockAt.forEach(function(v){ if(v===t) count++; });
   var maxCount = count + (PLACEABLE.indexOf(t) >= 0 ? 3000 : 400);   // room for lots of building / restored edits
-  var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : (t==="lava" ? lavaMaterial : atlasMaterial), Math.max(maxCount,1));
+  var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : (t==="lava" ? lavaMaterial : ((t==="sprout" || t==="wheat") ? cropMaterial : atlasMaterial)), Math.max(maxCount,1));
   mesh.count = 0;
   scene.add(mesh);
   typeData[t] = { mesh:mesh, positions:[], posToIndex:new Map() };
@@ -1347,7 +1384,7 @@ var player = {
   dead: false
 };
 
-function solidKey(k){ var t = blockAt.get(k); return !!t && t !== "torch" && t !== "lava"; }
+function solidKey(k){ var t = blockAt.get(k); return !!t && t !== "torch" && t !== "lava" && t !== "sprout" && t !== "wheat"; }
 function isSolid(x,y,z){
   return solidKey(key(Math.floor(x),Math.floor(y),Math.floor(z)));
 }
@@ -1407,11 +1444,12 @@ function updateHearts(){
 /* ---------- hunger and food ---------- */
 var HUNGER_MAX = 20;
 var hunger = HUNGER_MAX, starveTimer = 0, regenTimer = 0, lastHungerKey = -1;
-var food = { pork:0, beef:0, flesh:0 };
+var food = { pork:0, beef:0, flesh:0, wheat:0 };
 var FOODS = {
   pork:  { label:"Pork",  value:6, color:0xf0a5a0 },
   beef:  { label:"Beef",  value:8, color:0xc04030 },
-  flesh: { label:"Flesh", value:3, color:0x7b9440 }
+  flesh: { label:"Flesh", value:3, color:0x7b9440 },
+  wheat: { label:"Wheat", value:4, color:0xe8c64a }
 };
 var hungerEl = document.getElementById("hunger");
 var foodInvEl = document.getElementById("foodInv");
@@ -1454,9 +1492,9 @@ function updateHungerUI(){
 }
 function updateFoodInv(){
   var apples = inventory.apple || 0;
-  if(food.pork + food.beef + food.flesh + apples <= 0){ foodInvEl.hidden = true; return; }
+  if(food.pork + food.beef + food.flesh + food.wheat + apples <= 0){ foodInvEl.hidden = true; return; }
   foodInvEl.hidden = false;
-  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat"
+  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Wheat <b>" + food.wheat + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat"
     + (apples > 0 ? " · Golden Apple <b>" + apples + "</b> · <b>G</b> to heal" : "");
 }
 function useApple(){
@@ -1471,7 +1509,7 @@ function useApple(){
 }
 function eatFood(){
   if(player.dead || hunger >= HUNGER_MAX - 0.5) return false;
-  var t = food.beef > 0 ? "beef" : (food.pork > 0 ? "pork" : (food.flesh > 0 ? "flesh" : null));
+  var t = food.beef > 0 ? "beef" : (food.pork > 0 ? "pork" : (food.wheat > 0 ? "wheat" : (food.flesh > 0 ? "flesh" : null)));
   if(!t) return false;
   food[t]--;
   hunger = Math.min(HUNGER_MAX, hunger + FOODS[t].value);
@@ -1575,7 +1613,7 @@ function groundHeightAt(x,z){
 }
 
 /* mobs walk on terrain only: treat wood/leaves as obstacles, never as ground (no spawning or climbing on trees) */
-function isTreeBlock(t){ return t === "wood" || t === "leaves" || t === "torch" || t === "lava"; }
+function isTreeBlock(t){ return t === "wood" || t === "leaves" || t === "torch" || t === "lava" || t === "sprout" || t === "wheat"; }
 function terrainHeightAt(x,z){
   var xi=Math.floor(x), zi=Math.floor(z);
   for(var y=MAX_H+21; y>=0; y--){
@@ -2106,6 +2144,7 @@ window.addEventListener("keydown", function(e){
   if(n>="1" && n<="9"){ selectSlot(+n-1); }
   else if(n==="0"){ selectSlot(9); }
   else if(n==="-"){ selectSlot(10); }
+  else if(n==="="){ selectSlot(11); }
 });
 window.addEventListener("keyup", function(e){ keys[e.code]=false; if(e.code==="Tab") showBoard(false); });
 window.addEventListener("blur", function(){ showBoard(false); keys = {}; });
@@ -2171,10 +2210,11 @@ var ITEMS = [
   {id:"bow", kind:"weapon", label:"Bow", damage:6, range:7, cooldown:650, ranged:true, icon:BOW_ICON},
   {id:"torch", kind:"block"},
   {id:"pickaxe", kind:"tool", label:"Pickaxe", icon:PICK_ICON("#b08850")},
-  {id:"chest", kind:"block"}
+  {id:"chest", kind:"block"},
+  {id:"sprout", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2215,7 +2255,7 @@ ITEMS.forEach(function(item,i){
   }
   var keyTag = document.createElement("span");
   keyTag.className = "key";
-  keyTag.textContent = i < 9 ? (i+1) : (i === 9 ? "0" : "-");
+  keyTag.textContent = i < 9 ? (i+1) : (i === 9 ? "0" : (i === 10 ? "-" : "="));
   slot.appendChild(keyTag);
   slot.addEventListener("click", function(){ selectSlot(i); });
   hotbar.appendChild(slot);
@@ -2273,6 +2313,8 @@ var RECIPES = [
     cost:{wood:8}, once:false, apply:function(){ inventory.chest += 1; } },
   { id:"apple", label:"Golden Apple", desc:"Restores 5 hearts and some hunger \u2014 press G (or the eat button) to use it", icon:'<svg class="item" viewBox="0 0 24 24"><circle cx="12" cy="14" r="7.5" fill="#f2c744" stroke="#8a6a10" stroke-width="1.3"/><path d="M12 7c0-2 1-3.5 3-4" fill="none" stroke="#5a8a2a" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="9.5" cy="12" rx="2" ry="3" fill="rgba(255,255,255,0.45)"/></svg>',
     cost:{gold:3, leaves:2}, once:false, apply:function(){ inventory.apple += 1; updateFoodInv(); } },
+  { id:"seeds", label:"Seeds ×4", desc:"Plant them on grass or dirt (slot =) and harvest wheat to eat", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 21V11M12 11c-4 0-6-3-6-6 4 0 6 2 6 6zM12 14c4 0 6-3 6-6-4 0-6 2-6 6z" fill="#9bd24a" stroke="#3e6a1c" stroke-width="1.2"/></svg>',
+    cost:{leaves:2}, once:false, apply:function(){ inventory.sprout += 4; } },
   { id:"charm", label:"Emerald Charm", desc:"Saves you from death once: you wake with half your health. Keep it in your pack", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v7c0 4.2-3.4 6.8-8 8.5-4.6-1.7-8-4.3-8-8.5V7z" fill="#2ee06a" stroke="#0e6a30" stroke-width="1.4"/><path d="M12 7l4 2.3v4.2c0 2.2-1.7 3.7-4 4.6-2.3-.9-4-2.4-4-4.6V9.3z" fill="#9ff5bd" stroke="#0e6a30" stroke-width="0.9"/></svg>',
     cost:{emerald:5, diamond:2}, once:false, apply:function(){ inventory.charm += 1; updateGear(); } },
   { id:"armor1", label:"Gold Armor", desc:"Takes 30% less damage from enemies", icon:ARMOR_ICON("#f2c744"),
@@ -2728,6 +2770,13 @@ function doSecondary(ndc){
   if(item.kind!=="block" || (inventory[item.id]||0)<=0) return;
   if(!hit2) return;
   var nx = hit2.x+hit2.normal.x, ny = hit2.y+hit2.normal.y, nz = hit2.z+hit2.normal.z;
+  if(item.id === "sprout"){   // seeds only go on top of grass or dirt
+    var below = blockAt.get(key(hit2.x, hit2.y, hit2.z));
+    if(hit2.normal.y !== 1 || (below !== "grass" && below !== "dirt") || blockAt.has(key(nx, ny, nz))){
+      if(toastEl.hidden) showToast("Seeds can only be planted on top of grass or dirt");
+      return;
+    }
+  }
   var onLava = blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "lava";
   if(onLava){ nx = hit2.x; ny = hit2.y; nz = hit2.z; }   // placing a block on lava covers it up
   var px = player.pos, hw = player.halfW;
@@ -2763,7 +2812,7 @@ function mineSpeed(type, item){
   return Math.max(pick, item.id === "sword" ? 1.3 : 1);
 }
 function mineNeed(type, item){ return (HARDNESS[type] || 1) / mineSpeed(type, item); }
-var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, wood:1.6, stone:2.4, gold_ore:3.0, diamond_ore:4.2, emerald_ore:4.6, chest:1.2};
+var HARDNESS = {leaves:0.4, sand:0.6, dirt:0.7, grass:0.8, torch:0.15, sprout:0.1, wheat:0.2, wood:1.6, stone:2.4, gold_ore:3.0, diamond_ore:4.2, emerald_ore:4.6, chest:1.2};
 var primaryHeld = false;
 var mine = { x:0, y:0, z:0, t:0, active:false, swing:0, probe:0 };
 var mineBarEl = document.getElementById("mineBar"), mineFillEl = document.getElementById("mineFill");
@@ -2805,6 +2854,8 @@ function updateMining(dt){
     if(removedType === "chest") takeChestContents(key(bx,by,bz));
     if(removedType){
       spawnDrop(ORE_DROP[removedType] || removedType, bx+0.5, by+0.5, bz+0.5);
+      if(removedType === "wheat"){ spawnDrop("wheat", bx+0.5, by+0.5, bz+0.5); spawnDrop("sprout", bx+0.5, by+0.5, bz+0.5); }   // a ripe crop: two wheat and a seed to replant
+      else if(removedType === "grass" && Math.random() < 0.25) spawnDrop("sprout", bx+0.5, by+0.5, bz+0.5);   // seeds turn up while digging grass
       sfx.play("break", {v:removedType});
       netEdit(bx, by, bz, null);
     }
@@ -3387,7 +3438,7 @@ var mmTerrain = document.createElement("canvas");
 mmTerrain.width = MM_SIZE * mmDpr; mmTerrain.height = MM_SIZE * mmDpr;
 var mmTerrainCtx = mmTerrain.getContext("2d");
 var mmLast = 0;
-var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], emerald_ore:[46,224,106], bedrock:[60,60,64], lava:[230,90,20] };
+var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], emerald_ore:[46,224,106], sprout:[120,200,70], wheat:[214,180,60], bedrock:[60,60,64], lava:[230,90,20] };
 
 function mmPaintColumn(x, z){
   var top = -1, type = null;
@@ -3868,6 +3919,32 @@ function update(dt){
 }
 
 /* V toggles a small position readout: block coordinates, depth below sea level and the compass heading */
+/* crops grow while you play: a seedling ripens after a minute or two, and a crop whose soil is gone is uprooted */
+var cropBorn = {}, cropT = 0;
+function growCrops(dt, now){
+  cropT -= dt;
+  if(cropT > 0) return;
+  cropT = 4;
+  ["sprout", "wheat"].forEach(function(type){
+    typeData[type].positions.slice().forEach(function(p){
+      var x = p[0], y = p[1], z = p[2], k = key(x, y, z);
+      if(blockAt.get(k) !== type) return;
+      var soil = blockAt.get(key(x, y - 1, z));
+      if(soil !== "grass" && soil !== "dirt"){
+        removeBlock(x, y, z); delete cropBorn[k]; netEdit(x, y, z, null);
+        spawnDrop(type === "wheat" ? "wheat" : "sprout", x + 0.5, y + 0.5, z + 0.5);
+        return;
+      }
+      if(type !== "sprout") return;
+      if(cropBorn[k] === undefined) cropBorn[k] = now + hash2(x * 3.7, z * 5.1) * 40000;   // 70-110 s, a little different per plant
+      if(now - cropBorn[k] > 70000){
+        removeBlock(x, y, z); addBlock("wheat", x, y, z); netEdit(x, y, z, "wheat");
+        delete cropBorn[k];
+      }
+    });
+  });
+}
+
 var COMPASS = ["N","NE","E","SE","S","SW","W","NW"];
 var posEl = document.getElementById("posPill"), posOn = false, posT = 0;
 try{ posOn = localStorage.getItem("voxelPos") === "1"; }catch(e){}
@@ -3889,7 +3966,7 @@ function updatePos(dt){
   posEl.hidden = false;
 }
 
-var TARGET_NAMES = {gold_ore:"Gold ore", diamond_ore:"Diamond ore", emerald_ore:"Emerald ore", bedrock:"Bedrock", lava:"Lava"};
+var TARGET_NAMES = {sprout:"Seedling (growing)", wheat:"Ripe wheat", gold_ore:"Gold ore", diamond_ore:"Diamond ore", emerald_ore:"Emerald ore", bedrock:"Bedrock", lava:"Lava"};
 var targetEl = document.getElementById("targetLabel"), targetT = 0, targetShown = "";
 function updateTargetLabel(dt){
   targetT -= dt;
@@ -3919,6 +3996,7 @@ function animate(){
   update(dt);
   updateTargetLabel(dt);
   updatePos(dt);
+  growCrops(dt, now);
   updateWeather(dt);
   updateSky(dt);
   updateRain(dt);
@@ -3987,7 +4065,7 @@ function savePlayer(){
   }
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
   arrowCount = Math.floor(num(d.arrows, 0, 9999, 0));
-  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); }
+  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); food.wheat = Math.floor(num(d.food.wheat, 0, 999, 0)); }
   hunger = num(d.hunger, 0, HUNGER_MAX, HUNGER_MAX);
   player.hp = (typeof d.hp === "number" && d.hp >= 1) ? Math.min(player.maxHp, Math.round(d.hp)) : player.maxHp;
   if(Array.isArray(d.pos)){
