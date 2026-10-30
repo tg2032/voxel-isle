@@ -405,6 +405,7 @@
   #tJump{ width:60px; height:60px; right:calc(26px + var(--sr)); bottom:calc(186px + var(--sb)); }
   #tPlace{ width:60px; height:60px; right:calc(110px + var(--sr)); bottom:calc(120px + var(--sb)); }
   #tCraft{ width:46px; height:46px; right:calc(117px + var(--sr)); bottom:calc(190px + var(--sb)); font-size:20px; }
+  #tBoat{ width:46px; height:46px; right:calc(173px + var(--sr)); bottom:calc(246px + var(--sb)); font-size:20px; }
   #tEat{ width:46px; height:46px; right:calc(117px + var(--sr)); bottom:calc(246px + var(--sb)); font-size:20px; }
   #tMenu{ position:fixed; z-index:5; top:calc(8px + var(--st)); left:50%; transform:translateX(-50%); display:flex; gap:8px; }
   #tMenu .tb{ position:static; width:34px; height:34px; font-size:16px; }
@@ -437,6 +438,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
+      <kbd>R</kbd><span><b>Boat</b> — craft one (6 wood), then press R while swimming to get in or out</span>
       <kbd>=</kbd><span><b>Seeds</b> — find them in grass, or craft them from leaves. Plant on grass or dirt; ripe wheat is food</span>
       <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading (on a phone, tap the clock)</span>
       <kbd>Emerald</kbd><span><b>Emerald ore</b> hides deep underground — craft a charm (5 emeralds + 2 diamonds) that saves you from death once</span>
@@ -496,6 +498,7 @@
   <button class="tb" id="tPlace" aria-label="Place block">🧱</button>
   <button class="tb" id="tCraft" aria-label="Craft">🔨</button>
   <button class="tb" id="tEat" aria-label="Eat">🍖</button>
+  <button class="tb" id="tBoat" aria-label="Boat" hidden>⛵</button>
 </div>
 
 <div id="hud">
@@ -546,7 +549,7 @@ var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald", w
 var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
 BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
@@ -2133,6 +2136,7 @@ window.addEventListener("keydown", function(e){
   if(e.code==="KeyM" && !e.repeat){ mmEl.hidden = !mmEl.hidden; return; }
   if(e.code==="KeyB" && !e.repeat){ cycleCaveLight(); return; }
   if(e.code==="KeyV" && !e.repeat){ togglePos(); return; }
+  if(e.code==="KeyR" && !e.repeat && locked && !craftOpen){ toggleBoat(); return; }
   if(e.code==="KeyK" && !e.repeat){ sfx.toggle(); return; }
   if(e.code==="KeyF" && !e.repeat && locked && !craftOpen){ eatFood(); return; }
   if(e.code==="KeyG" && !e.repeat && locked && !craftOpen){ useApple(); return; }
@@ -2214,7 +2218,7 @@ var ITEMS = [
   {id:"sprout", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0, boat:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2315,6 +2319,8 @@ var RECIPES = [
     cost:{gold:3, leaves:2}, once:false, apply:function(){ inventory.apple += 1; updateFoodInv(); } },
   { id:"seeds", label:"Seeds ×4", desc:"Plant them on grass or dirt (slot =) and harvest wheat to eat", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 21V11M12 11c-4 0-6-3-6-6 4 0 6 2 6 6zM12 14c4 0 6-3 6-6-4 0-6 2-6 6z" fill="#9bd24a" stroke="#3e6a1c" stroke-width="1.2"/></svg>',
     cost:{leaves:2}, once:false, apply:function(){ inventory.sprout += 4; } },
+  { id:"boat", label:"Boat", desc:"Press R while swimming to climb in: faster than swimming, no drowning", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M2 14h20l-3.5 6h-13z" fill="#8a5a2b" stroke="#4a2f14" stroke-width="1.3"/><path d="M12 3v10M12 4l7 8h-7z" fill="#f2f2f2" stroke="#666" stroke-width="1"/></svg>',
+    cost:{wood:6}, once:false, apply:function(){ inventory.boat += 1; updateGear(); } },
   { id:"charm", label:"Emerald Charm", desc:"Saves you from death once: you wake with half your health. Keep it in your pack", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v7c0 4.2-3.4 6.8-8 8.5-4.6-1.7-8-4.3-8-8.5V7z" fill="#2ee06a" stroke="#0e6a30" stroke-width="1.4"/><path d="M12 7l4 2.3v4.2c0 2.2-1.7 3.7-4 4.6-2.3-.9-4-2.4-4-4.6V9.3z" fill="#9ff5bd" stroke="#0e6a30" stroke-width="0.9"/></svg>',
     cost:{emerald:5, diamond:2}, once:false, apply:function(){ inventory.charm += 1; updateGear(); } },
   { id:"armor1", label:"Gold Armor", desc:"Takes 30% less damage from enemies", icon:ARMOR_ICON("#f2c744"),
@@ -2450,7 +2456,7 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple"].map(function(t){
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","boat"].map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
@@ -2559,6 +2565,8 @@ function updateGear(){
   if(inventory.diamond > 0) parts.push("Diamond <b>" + inventory.diamond + "</b>");
   if(inventory.emerald > 0) parts.push("Emerald <b>" + inventory.emerald + "</b>");
   if(inventory.charm > 0) parts.push("Charm <b>" + inventory.charm + "</b>");
+  if(inventory.boat > 0) parts.push("Boat <b>" + inventory.boat + "</b> (R)");
+  var tb = document.getElementById("tBoat"); if(tb) tb.hidden = !(inventory.boat > 0);
   if(swordTier) parts.push(TIER_NAME[swordTier] + " sword");
   if(armorTier) parts.push(TIER_NAME[armorTier] + " armor");
   if(shieldTier) parts.push(TIER_NAME[shieldTier] + " shield");
@@ -2957,6 +2965,7 @@ function updateMining(dt){
     function(){ jmp.classList.remove("down"); keys.Space = false; });
   press($("tPlace"), doSecondary);
   press($("tCraft"), function(){ if(!player.dead) toggleCraft(); });
+  press($("tBoat"), function(){ if(locked && !craftOpen) toggleBoat(); });
   press($("tEat"), function(){ if(locked && !craftOpen && !eatFood()) useApple(); });
   press($("tPause"), function(){ releaseLock(); });
   press($("tRank"), function(){ showBoard(boardEl.hidden); });
@@ -3159,6 +3168,8 @@ function updateAvatars(dt){
     L.legL.rotation.x = sw; L.legR.rotation.x = -sw;
     L.armL.rotation.x = -sw; L.armR.rotation.x = sw;
     applyAvatarGear(av, parseGear(pr.g));
+    if(pr.b === 1 && !av.boat){ av.boat = makeBoatMesh(); av.boat.position.y = -0.05; m.add(av.boat); }
+    if(av.boat) av.boat.visible = pr.b === 1;
     m.visible = !pr.dead;
   });
   Object.keys(avatars).forEach(function(id){
@@ -3175,7 +3186,8 @@ function sendPresence(){
     yaw: Math.round(player.yaw*100)/100,
     dead: player.dead,
     host: net.canHost,
-    g: [swordTier, armorTier, shieldTier, selected, pickTier]
+    g: [swordTier, armorTier, shieldTier, selected, pickTier],
+    b: boatOn ? 1 : 0
   };
   if(net.hostPeer !== null && net.hostPeer === net.myPeer){
     patch.mobs = monsters.map(function(m){
@@ -3760,6 +3772,35 @@ var sprinting = false;
 var stepDist = 0;
 var airPeakY = 0, waterTick = 0, wasInWater = false;
 
+/* boat: craft it (6 wood), then press R while swimming to climb in; it floats, goes faster than swimming and keeps you dry */
+var boatOn = false;
+function makeBoatMesh(){
+  var g = new THREE.Group();
+  function box(w, h, d, x, y, z, col){ var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), gearMat(col)); m.position.set(x, y, z); g.add(m); }
+  box(1.3, 0.2, 2.0, 0, 0.1, 0, 0x8a5a2b);
+  box(0.12, 0.28, 2.0, -0.62, 0.34, 0, 0x6e4522); box(0.12, 0.28, 2.0, 0.62, 0.34, 0, 0x6e4522);
+  box(1.3, 0.28, 0.12, 0, 0.34, -0.94, 0x6e4522); box(1.3, 0.28, 0.12, 0, 0.34, 0.94, 0x6e4522);
+  return g;
+}
+var boatMesh = makeBoatMesh(); boatMesh.visible = false; scene.add(boatMesh);
+function boatWater(){
+  var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
+  if(fx < 0 || fx >= SIZE || fz < 0 || fz >= SIZE) return false;
+  return heightMap[fx*SIZE+fz] < SEA_LEVEL && !solidKey(key(fx, SEA_LEVEL-1, fz));
+}
+function toggleBoat(){
+  if(player.dead) return;
+  if(boatOn){ boatOn = false; showToast("You left the boat"); return; }
+  if((inventory.boat || 0) <= 0){ showToast("Craft a boat first (6 wood)"); return; }
+  if(!boatWater() || isInLava()){ showToast("Board the boat while you are in water"); return; }
+  boatOn = true;
+  sfx.play("splash");
+  showToast("In the boat \u2014 press R to get out");
+}
+function updateBoatMesh(){
+  boatMesh.visible = boatOn;
+  if(boatOn){ boatMesh.position.set(player.pos.x, SEA_LEVEL - 0.12, player.pos.z); boatMesh.rotation.y = player.yaw; }
+}
 function isInWater(){
   var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z), fy = Math.floor(player.pos.y + 0.3);
   if(fx < 0 || fx >= SIZE || fz < 0 || fz >= SIZE || fy >= SEA_LEVEL || fy < 0) return false;
@@ -3820,10 +3861,12 @@ function update(dt){
   }
 
   var inLava = isInLava();
-  var inW = isInWater() || inLava;
-  var speedMul = inW ? 0.55 : 1;
+  if(boatOn && (player.dead || inLava || !boatWater())){ boatOn = false; if(!player.dead) showToast("You left the boat"); }
+  var boating = boatOn;
+  var inW = (isInWater() || inLava) && !boating;
+  var speedMul = boating ? 1.5 : (inW ? 0.55 : 1);
   /* hold Shift while moving forward to sprint; it costs hunger and stops when you are nearly starving */
-  sprinting = !!((keys.ShiftLeft || keys.ShiftRight || tSprint) && forward > 0 && !inW && !player.dead && hunger > 6);
+  sprinting = !!((keys.ShiftLeft || keys.ShiftRight || tSprint) && forward > 0 && !inW && !boating && !player.dead && hunger > 6);
   if(sprinting) speedMul *= 1.45;
   var wantFov = sprinting ? 76 : 70;
   if(Math.abs(camera.fov - wantFov) > 0.05){
@@ -3833,15 +3876,21 @@ function update(dt){
   player.vel.x = dx*SPEED*speedMul;
   player.vel.z = dz*SPEED*speedMul;
 
-  if(inW && keys.Space && !player.dead){
+  if(inW && keys.Space && !player.dead && !boating){
     player.vel.y = Math.max(player.vel.y, 3.2);
-  } else if(keys.Space && player.onGround && !player.dead){
+  } else if(keys.Space && player.onGround && !player.dead && !boating){
     player.vel.y = JUMP;
     player.onGround = false;
     sfx.play("jump");
   }
-  player.vel.y += GRAVITY*dt*(inW ? 0.25 : 1);
-  if(player.vel.y < (inW ? -3 : -40)) player.vel.y = inW ? -3 : -40;
+  if(boating){   // the boat floats: ride at the water surface
+    player.vel.y = 0;
+    player.pos.y += (SEA_LEVEL - 0.1 - player.pos.y) * Math.min(1, dt*8);
+    airPeakY = player.pos.y; player.onGround = true;
+  } else {
+    player.vel.y += GRAVITY*dt*(inW ? 0.25 : 1);
+    if(player.vel.y < (inW ? -3 : -40)) player.vel.y = inW ? -3 : -40;
+  }
 
   var moveX = collideAxis("x", player.vel.x*dt);
   player.pos.x += moveX;
@@ -3995,6 +4044,7 @@ function animate(){
   if(tAttackHeld || primaryHeld){ doPrimary(); updateMining(dt); } else resetMining();
   update(dt);
   updateTargetLabel(dt);
+  updateBoatMesh();
   updatePos(dt);
   growCrops(dt, now);
   updateWeather(dt);
