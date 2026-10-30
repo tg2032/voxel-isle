@@ -550,7 +550,7 @@ var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
 BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
-BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.chest = "#a0693a";
+BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.charm = "#2ee06a"; BLOCK_SWATCH.apple = "#f2c744"; BLOCK_SWATCH.boat = "#8a5a2b"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -1595,7 +1595,7 @@ function killPlayer(){
     player.pos.set(cx+0.5, Math.max(heightMap[cx*SIZE+cz], SEA_LEVEL)+3, cz+0.5);
     player.vel.set(0,0,0);
     player.hp = player.maxHp;
-    player.dead = false;
+    player.dead = false; invulnUntil = 0;
     deathCard.hidden = true;
     hunger = HUNGER_MAX; starveTimer = 0; regenTimer = 0;
     oxygen = OXYGEN_MAX; updateOxygenUI();
@@ -2388,7 +2388,7 @@ function takeChestContents(k){
   Object.keys(c).forEach(function(t){ if(c[t] > 0){ packAdd(t, c[t]); any = true; } });
   delete chestData[k]; saveChests();
   if(net.db) net.db.doc("chests/" + k.replace(/,/g, "_")).set({k:k, items:{}}).catch(function(){});
-  updateHotbarCounts(); updateGear();
+  updateHotbarCounts(); updateGear(); updateFoodInv();
   if(any) showToast("The chest's contents went into your backpack");
 }
 var chestPanelEl = document.getElementById("chestPanel"), chestListEl = document.getElementById("chestList"), packListEl = document.getElementById("packList");
@@ -2456,7 +2456,7 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","boat"].map(function(t){
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","sprout","charm","boat"].map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
@@ -2606,6 +2606,7 @@ function updateViewmodel(){
   var item = currentItem();
   if(item.kind==="block"){
     blockViewMesh.geometry = GEOMETRY[item.id];
+    blockViewMesh.material = (item.id === "sprout" || item.id === "wheat") ? cropMaterial : (item.id === "torch" ? torchMaterial : atlasMaterial);
     blockViewMesh.scale.set(0.22,0.22,0.22);
     viewGroup.add(blockViewMesh);
   } else if(item.id==="sword"){
@@ -2863,7 +2864,7 @@ function updateMining(dt){
     if(removedType){
       spawnDrop(ORE_DROP[removedType] || removedType, bx+0.5, by+0.5, bz+0.5);
       if(removedType === "wheat"){ spawnDrop("wheat", bx+0.5, by+0.5, bz+0.5); spawnDrop("sprout", bx+0.5, by+0.5, bz+0.5); }   // a ripe crop: two wheat and a seed to replant
-      else if(removedType === "grass" && Math.random() < 0.25) spawnDrop("sprout", bx+0.5, by+0.5, bz+0.5);   // seeds turn up while digging grass
+      else if(removedType === "grass" && !localEdits[bx+"_"+by+"_"+bz] && Math.random() < 0.25) spawnDrop("sprout", bx+0.5, by+0.5, bz+0.5);   // seeds turn up while digging grass
       sfx.play("break", {v:removedType});
       netEdit(bx, by, bz, null);
     }
@@ -3021,6 +3022,10 @@ function applyRemoteEdit(x,y,z,t){
     return;
   }
   if(PLACEABLE.indexOf(t) < 0 || cur===t) return;
+  if(t === "sprout" || t === "wheat"){   // crops only exist on top of grass or dirt
+    var soilBelow = blockAt.get(key(x,y-1,z));
+    if(soilBelow !== "grass" && soilBelow !== "dirt") return;
+  }
   if(cur) removeBlock(x,y,z);
   if(!addBlock(t,x,y,z)) return;
   sfx.at("place", x+0.5, y+0.5, z+0.5, {v:t});
@@ -3786,7 +3791,7 @@ var boatMesh = makeBoatMesh(); boatMesh.visible = false; scene.add(boatMesh);
 function boatWater(){
   var fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
   if(fx < 0 || fx >= SIZE || fz < 0 || fz >= SIZE) return false;
-  return heightMap[fx*SIZE+fz] < SEA_LEVEL && !solidKey(key(fx, SEA_LEVEL-1, fz));
+  return heightMap[fx*SIZE+fz] < SEA_LEVEL && !solidKey(key(fx, SEA_LEVEL-1, fz)) && !solidKey(key(fx, SEA_LEVEL, fz)) && !solidKey(key(fx, SEA_LEVEL+1, fz));
 }
 function toggleBoat(){
   if(player.dead) return;
@@ -3968,30 +3973,41 @@ function update(dt){
 }
 
 /* V toggles a small position readout: block coordinates, depth below sea level and the compass heading */
-/* crops grow while you play: a seedling ripens after a minute or two, and a crop whose soil is gone is uprooted */
-var cropBorn = {}, cropT = 0;
+/* crops: a seedling ripens 70-110 s after planting (wall-clock, so time spent away counts and a reload does not restart it); a crop whose soil is gone is uprooted.
+   Every client grows crops locally, but only the host broadcasts the result so a room does not send one edit per player. */
+var CROPS_KEY = "voxelCrops1";
+var cropBorn = {}, cropT = 0, cropDirty = false;
+try{
+  var rawCrops = JSON.parse(localStorage.getItem(CROPS_KEY) || "{}");
+  if(rawCrops && typeof rawCrops === "object") Object.keys(rawCrops).slice(0, 5000).forEach(function(k){ if(isFiniteNum(rawCrops[k])) cropBorn[k] = rawCrops[k]; });
+}catch(e){}
 function growCrops(dt, now){
   cropT -= dt;
   if(cropT > 0) return;
   cropT = 4;
+  var wall = Date.now(), share = isHost();
   ["sprout", "wheat"].forEach(function(type){
     typeData[type].positions.slice().forEach(function(p){
       var x = p[0], y = p[1], z = p[2], k = key(x, y, z);
       if(blockAt.get(k) !== type) return;
       var soil = blockAt.get(key(x, y - 1, z));
       if(soil !== "grass" && soil !== "dirt"){
-        removeBlock(x, y, z); delete cropBorn[k]; netEdit(x, y, z, null);
+        removeBlock(x, y, z); delete cropBorn[k]; cropDirty = true;
+        if(share) netEdit(x, y, z, null);
         spawnDrop(type === "wheat" ? "wheat" : "sprout", x + 0.5, y + 0.5, z + 0.5);
         return;
       }
       if(type !== "sprout") return;
-      if(cropBorn[k] === undefined) cropBorn[k] = now + hash2(x * 3.7, z * 5.1) * 40000;   // 70-110 s, a little different per plant
-      if(now - cropBorn[k] > 70000){
-        removeBlock(x, y, z); addBlock("wheat", x, y, z); netEdit(x, y, z, "wheat");
-        delete cropBorn[k];
+      if(cropBorn[k] === undefined){ cropBorn[k] = wall + hash2(x * 3.7, z * 5.1) * 40000; cropDirty = true; }   // 70-110 s, a little different per plant
+      if(wall - cropBorn[k] > 70000){
+        removeBlock(x, y, z);
+        if(addBlock("wheat", x, y, z)){ if(share) netEdit(x, y, z, "wheat"); delete cropBorn[k]; cropDirty = true; }
+        else addBlock("sprout", x, y, z);   // no room for another wheat instance: keep the seedling
       }
     });
   });
+  Object.keys(cropBorn).forEach(function(k){ if(blockAt.get(k) !== "sprout"){ delete cropBorn[k]; cropDirty = true; } });
+  if(cropDirty){ cropDirty = false; try{ localStorage.setItem(CROPS_KEY, JSON.stringify(cropBorn)); }catch(e){} }
 }
 
 var COMPASS = ["N","NE","E","SE","S","SW","W","NW"];

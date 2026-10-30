@@ -22,6 +22,15 @@ check('harvest removes the crop',(await d('at',x,h,z))===null);
 check('wheat is food',(await d('setFood',2),await d('setHunger',5),await d('eat'),Math.abs((await d('hunger'))-9)<0.3));
 await d('setBlock',x+4,h,z,'sprout');await d('setBlock',x+4,h-1,z,'dirt');await d('scan');await d('setBlock',x+4,h-1,z,null);await d('scan');
 check('crop without soil is uprooted',(await d('at',x+4,h,z))===null);
+check('seeds in hand render with the crop material',(await d('sel',11),await d('viewMat')));
+await d('sel',0);
+await d('remoteEdit',x+6,h+9,z,'wheat');check('remote wheat floating in the air is ignored',(await d('at',x+6,h+9,z))===null);
+await d('setBlock',x+6,h-1,z,'grass');await d('setBlock',x+6,h,z,null);await d('remoteEdit',x+6,h,z,'wheat');
+check('remote crop on grass is accepted',(await d('at',x+6,h,z))==='wheat');
+await d('setBlock',x+2,h-1,z,'grass');await d('setBlock',x+2,h,z,'sprout');await d('netEdit',x+2,h,z,'sprout');await d('scan');const kk=(await d('cropKeys')).length;
+check('growth timers are tracked',kk>=1);
+await p.reload();await p.waitForTimeout(2500);await d('play');
+check('growth timers survive a reload',(await d('cropKeys')).length>=1);
 /* ---- shared chests ---- */
 await d('mockDb');const k=(await d('wc'))[0];const [cx,cy,cz]=k.split(',').map(Number);
 await d('openChest',cx,cy,cz);await d('chestClick','chest',0,1);

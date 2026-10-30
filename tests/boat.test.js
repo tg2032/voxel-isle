@@ -6,7 +6,7 @@ await p.goto('file://'+path.resolve(__dirname,'boat-local.html'));await p.waitFo
 const d=(f,...a)=>p.evaluate(([f,a])=>window.__debug[f](...a),[f,a]);
 await d('play');
 const deep=await d('deep');console.log('deep water',deep);check('found open water',!!deep);
-const sea=await d('sea');
+const sea=await d('sea');await p.evaluate(([w])=>{window.__deep=w;},[deep]);
 await p.evaluate(([w,s])=>window.__debug.tp(w[0]+0.5,s-0.8,w[1]+0.5),[deep,sea]);
 check('touch boat button hidden until a boat exists',(await d('tboat'))===true);
 await p.evaluate(()=>window.__debug.toggle());check('cannot board without a boat',(await d('on'))===false&&/Craft a boat/.test(await d('toast')||''));
@@ -31,6 +31,10 @@ await d('mockPeers',[{id:'x1',pr:{x:20.5,y:5,z:20.5,yaw:0,dead:false,b:1}},{id:'
 check('presence flag b is 1 in a boat',mine&&mine.b===1,JSON.stringify(mine&&mine.b));
 check('remote player in a boat shows one',(await d('boatOf','x1'))===true&&(await d('boatOf','x2'))===null);
 await d('setPeer','x1',{x:20.5,y:5,z:20.5,yaw:0,dead:false,b:0});await p.waitForTimeout(800);check('remote boat disappears when they leave it',(await d('boatOf','x1'))===false);
+const bp=await d('pos');
+await p.evaluate(([bp,s])=>window.__debug.block(Math.floor(bp[0]),s,Math.floor(bp[2]),'stone'),[bp,sea]);await p.waitForTimeout(700);
+check('a block placed over the water dismounts you',(await d('on'))===false);
+await p.evaluate(([bp,s])=>window.__debug.block(Math.floor(bp[0]),s,Math.floor(bp[2]),null),[bp,sea]);await p.evaluate(()=>window.__debug.tp(window.__deep[0]+0.5,3,window.__deep[1]+0.5));await p.waitForTimeout(200);await p.evaluate(()=>window.__debug.toggle());
 // get out manually, and auto-dismount on shore
 await p.evaluate(()=>window.__debug.toggle());check('R gets you out',(await d('on'))===false);
 await p.evaluate(()=>window.__debug.toggle());check('can board again',(await d('on'))===true);
