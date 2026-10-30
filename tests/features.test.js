@@ -11,9 +11,8 @@ const aim=()=>p.evaluate(([x,z,h])=>{const D=window.__debug;D.tp(x+0.5,h+0.01,z+
 const t=await aim();const x=t[0],z=t[2],h=t[1]+1;
 await d('sel',11);await d('give','sprout',3);await aim();await d('place');
 check('seeds plant on grass',(await d('at',x,h,z))==='sprout'&&(await d('inv','sprout'))===2);
-await d('setBlock',x+1,h-1,z,'stone');await p.evaluate(([x,z,h])=>{const D=window.__debug;D.tp(x+1.5,h+0.01,z+2.5);D.look(0,-0.9);D.sync();},[ox,oz,oh]);
-const st=await d('tgt');await d('setBlock',st[0],st[1],st[2],'stone');await d('place');
-check('seeds refuse stone',(await d('at',st[0],st[1]+1,st[2]))===null&&(await d('inv','sprout'))===2);
+const st=await p.evaluate(([x,z,h])=>{const D=window.__debug;D.tp(x+1.5,h+0.01,z+2.5);D.look(0,-0.9);D.sync();const t=D.tgt();D.setBlock(t[0],t[1],t[2],'stone');D.place();return t;},[ox,oz,oh]);
+check('seeds refuse stone',(await d('at',st[0],st[1]+1,st[2]))===null&&(await d('inv','sprout'))===2,JSON.stringify(st));
 await d('scan');await d('age',60000);check('still a seedling after 60 s',(await d('at',x,h,z))==='sprout');
 await d('age',60000);check('ripens to wheat',(await d('at',x,h,z))==='wheat');
 await p.evaluate(([x,z,h])=>{const D=window.__debug;D.sel(0);D.tp(x+0.5,h+0.01,z+2.5);D.look(0,-0.5);D.sync();D.hold(true);},[ox,oz,oh]);
@@ -34,8 +33,9 @@ check('growth timers survive a reload',(await d('cropKeys')).length>=1);
 /* ---- shared chests ---- */
 await d('mockDb');const k=(await d('wc'))[0];const [cx,cy,cz]=k.split(',').map(Number);
 await d('openChest',cx,cy,cz);await d('chestClick','chest',0,1);
-let sets=await d('sets');check('taking from a chest pushes it to the db',sets.length===1&&sets[0][0]==='chests/'+k.replace(/,/g,'_'),JSON.stringify(sets[0]));
+let sets=await d('sets');check('opening a world chest claims it in the db, taking pushes again',sets.length===2&&sets[1][0]==='chests/'+k.replace(/,/g,'_')&&sets[0][1].items.gold>0,JSON.stringify(sets));
 await d('remoteChest',{k,items:{diamond:3}});check('a remote update refreshes the open chest',/Diamond:3/.test((await d('chestRows')).join()));
+await d('remoteEdit',cx,cy,cz,'air');check('a remote player breaking the chest closes our panel and clears it',(await d('chestData',k))===null&&(await d('chestOpen'))===false);
 await d('remoteChest',{k:'999,1,1',items:{gold:1}});await d('remoteChest',null);check('junk chest updates are ignored',(await d('chestData','999,1,1'))===null);
 /* ---- HUD: target label, position readout ---- */
 await d('setBlock',ox,oh+1,oz-3,'chest');

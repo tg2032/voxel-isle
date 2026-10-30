@@ -1999,6 +1999,15 @@ function roofedAt(x, y, z){
   }
   return false;
 }
+/* how many blocks of cover (up to 3) are above the player: a thin roof only dims the light, three or more is a cave */
+function roofDepthAt(x, y, z){
+  var xi = Math.floor(x), zi = Math.floor(z), n = 0;
+  for(var yy = Math.floor(y + 2); yy <= MAX_H + 22 && n < 3; yy++){
+    var t = blockAt.get(key(xi,yy,zi));
+    if(t && !isTreeBlock(t)) n++;
+  }
+  return n;
+}
 function undergroundAt(x, y, z){
   var h = terrainHeightAt(x, z);
   return h > 0 && y < h - 3 && roofedAt(x, y, z);
@@ -2081,6 +2090,10 @@ function updateMonsters(dt, now){
   }
   monsters.forEach(function(mob){
     if(mob.kind !== "crawler"){ updateAnimal(mob, dt, now); return; }
+    /* a mob adopted from the previous host has no local flags: infer them from where it stands and how big it is */
+    if(mob.cave === undefined) mob.cave = !mob.boss && undergroundAt(mob.x, mob.y, mob.z);
+    if(mob.boss && !mob.dmg){ mob.dmg = 7; mob.speed = 1.7; }
+    if(mob.cave && !mob.dmg) mob.dmg = 3;
     var tg = null, best = Infinity;
     targets.forEach(function(t){
       var d = Math.hypot(t.x-mob.x, t.z-mob.z);
@@ -2377,6 +2390,7 @@ function chestContents(k){
     chestData[k] = worldChestKeys[k] ? lootFor(+parts[0], +parts[1], +parts[2]) : {};
     delete worldChestKeys[k];     // from now on it is an ordinary chest with whatever is left in it
     saveChests();
+    pushChest(k);                 // claim it in the shared db so other players see the same loot
   }
   return chestData[k];
 }
@@ -2699,7 +2713,11 @@ function spawnDrop(type, x, y, z){
   }
   mesh.position.set(x + (Math.random()-0.5)*0.3, y, z + (Math.random()-0.5)*0.3);
   scene.add(mesh);
-  while(drops.length >= MAX_DROPS){ scene.remove(drops[0].mesh); drops.shift(); }
+  while(drops.length >= MAX_DROPS){   // make room by dropping the oldest cheap item first, rare ones (ore, wheat, seeds...) last
+    var ev = 0;
+    for(var di = 0; di < drops.length; di++){ if(!DROP_COLORS[drops[di].type] && !Object.prototype.hasOwnProperty.call(FOODS, drops[di].type)){ ev = di; break; } }
+    scene.remove(drops[ev].mesh); drops.splice(ev, 1);
+  }
   drops.push({
     mesh: mesh, type: type,
     vel: new THREE.Vector3((Math.random()-0.5)*1.2, 3.2, (Math.random()-0.5)*1.2),
@@ -3018,7 +3036,14 @@ function applyRemoteEdit(x,y,z,t){
   var cur = blockAt.get(key(x,y,z));
   if(cur === "bedrock" || (cur === "lava" && t === "air")) return;   // bedrock never changes; lava can be built over but not removed
   if(t==="air"){
-    if(cur){ removeBlock(x,y,z); sfx.at("break", x+0.5, y+0.5, z+0.5, {v:cur}); }
+    if(cur){
+      removeBlock(x,y,z); sfx.at("break", x+0.5, y+0.5, z+0.5, {v:cur});
+      if(cur === "chest"){   // somebody else broke it: its contents are gone from our side too
+        var ck = key(x,y,z);
+        delete chestData[ck]; delete worldChestKeys[ck]; saveChests();
+        if(chestOpen && chestCur === ck) closeChest();
+      }
+    }
     return;
   }
   if(PLACEABLE.indexOf(t) < 0 || cur===t) return;
@@ -3827,8 +3852,9 @@ function updateCaveDark(dt){
   caveScanT -= dt;
   if(caveScanT <= 0){
     caveScanT = 0.2;
-    var blocked = roofedAt(player.pos.x, player.pos.y, player.pos.z);
-    caveTarget = blocked ? 1 : 0;
+    var cover = roofDepthAt(player.pos.x, player.pos.y, player.pos.z);
+    var blocked = cover >= 3;
+    caveTarget = cover >= 3 ? 1 : cover * 0.3;
     if(blocked && !caveToldDark && caveDark > 0.5){ caveToldDark = true; showToast("It's dark down here \u2014 place torches"); }
   }
   caveDark += (caveTarget - caveDark) * Math.min(1, dt*2.5);
