@@ -7,6 +7,8 @@ cp <three@0.128.0>/build/three.min.js tests/      # npm pack three@0.128.0
 python3 tests/build.py smoke && node tests/smoke.test.js   # recipes, ores, charm, apple, armor, boss, gear validator
 python3 tests/build.py fuzz  && node tests/fuzz.test.js    # 150 s of random actions, fails on any page error / NaN
 python3 tests/build.py features && node tests/features.test.js   # farming, shared chests, target label, position readout, sprint
+python3 tests/build.py touch && node tests/touch.test.js         # phone: tap to play, stick sprint, tap-the-clock readout
+python3 tests/build.py peers && node tests/peers.test.js         # other players: gear in presence, avatar armor/tools, cleanup
 ```
 
 Run `node` with `NODE_PATH` pointing at the global playwright install if needed. The generated `*-local.html` files are git-ignored.

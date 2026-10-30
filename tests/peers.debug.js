@@ -1,0 +1,6 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ mockPeers:function(list){window.__peers=list;window.__emits=[];net.room={peers:function(){return window.__peers.map(function(q){return {sameTab:false,kind:'viewer',peer:q.id,presence:q.pr};});},emit:function(n,d){window.__emits.push([n,d]);return Promise.resolve();},on:function(){},presence:function(p){window.__myPresence=p;return Promise.resolve();},connected:function(){return true;}};net.hostPeer=null;net.myPeer=null;},
+ setPeer:function(id,pr){window.__peers.forEach(function(q){if(q.id===id)q.pr=pr;});}, removePeer:function(id){window.__peers=window.__peers.filter(function(q){return q.id!==id;});},
+ av:function(id){var a=avatars[id];if(!a)return null;return {parts:a.gearParts.length,colors:a.gearParts.map(function(m){return m.material.color.getHex();}),armR:a.mesh.userData.limbs.armR.children.length};}, avCount:function(){return Object.keys(avatars).length;},
+ give:function(t,n){inventory[t]=n;}, craft:function(id){var r=RECIPES.filter(function(x){return x.id===id;})[0];if(!canAfford(r.cost))return false;Object.keys(r.cost).forEach(function(k){inventory[k]-=r.cost[k];});r.apply();return true;},
+ selectSlot:function(i){selectSlot(i);}, sendNow:function(){lastPresence="";sendPresence();return window.__myPresence||null;}, geo:function(){return renderer.info.memory.geometries;}};
