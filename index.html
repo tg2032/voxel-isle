@@ -429,7 +429,7 @@
       <kbd>1–6</kbd><span><b>Select</b> a block from the hotbar</span>
       <kbd>7 / 8</kbd><span><b>Equip</b> the sword or bow, once crafted</span>
       <kbd>9</kbd><span><b>Torch</b> — craft it, then place it for light</span>
-      <kbd>0 / -</kbd><span><b>Pickaxe</b> (mines faster) / <b>Chest</b> (right-click it to open)</span>
+      <kbd>0 / -</kbd><span><b>Pickaxe</b> (mines faster) / <b>Chest</b> (right-click it to open; hold Shift to place blocks against it)</span>
       <kbd>C</kbd><span><b>Craft</b> tools, armor and shields — dig deep for gold and diamonds</span>
       <kbd>T / Enter</kbd><span><b>Chat</b> with other players</span>
       <kbd>Tab</kbd><span>Hold to see the <b>ranking</b></span>
@@ -2793,7 +2793,7 @@ function doSecondary(ndc){
   if(!locked || player.dead) return;
   var item = currentItem();
   var hit2 = raycastBlock(ndc);
-  if(hit2 && blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "chest"){ openChest(hit2.x, hit2.y, hit2.z); return; }   // right-click / tap a chest opens it
+  if(hit2 && blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "chest" && !(keys.ShiftLeft || keys.ShiftRight)){ openChest(hit2.x, hit2.y, hit2.z); return; }   // right-click / tap a chest opens it; hold Shift to build against it instead
   if(item.kind!=="block" || (inventory[item.id]||0)<=0) return;
   if(!hit2) return;
   var nx = hit2.x+hit2.normal.x, ny = hit2.y+hit2.normal.y, nz = hit2.z+hit2.normal.z;

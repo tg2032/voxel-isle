@@ -41,6 +41,9 @@ await d('remoteChest',{k:'999,1,1',items:{gold:1}});await d('remoteChest',null);
 await d('setBlock',ox,oh+1,oz-3,'chest');
 await p.evaluate(([x,z,h])=>{const D=window.__debug;D.tp(x+0.5,h+0.01,z+0.5);D.look(0,0);D.sync();},[ox,oz,oh]);await p.waitForTimeout(1500);
 check('label names the chest and how to open it',/Chest .* open/.test(await d('label')||''),await d('label'));
+await d('give','stone',5);
+await p.evaluate(([x,z,h])=>{const D=window.__debug;D.play();D.sel(2);D.tp(x+0.5,h+0.01,z+0.5);D.look(0,0);D.sync();D.kd('ShiftLeft');D.place();D.ku('ShiftLeft');},[ox,oz,oh]);
+check('Shift+right-click places a block against a chest instead of opening it',(await d('inv','stone'))===4&&(await d('chestOpen'))===false&&(await d('at',ox,oh+1,oz-2))==='stone');
 await p.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyV'})));await p.waitForTimeout(1200);
 check('V shows coordinates and heading',/^X \d+\s+Y \d+\s+Z \d+\s+(N|NE|E|SE|S|SW|W|NW)/.test(await d('posText')||''),await d('posText'));
 /* ---- sprint ---- */
