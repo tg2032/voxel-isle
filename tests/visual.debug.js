@@ -7,4 +7,5 @@ window.__debug={play:function(){locked=true;syncOverlay();},
  setBlock:function(x,y,z,t){if(blockAt.has(key(x,y,z)))removeBlock(x,y,z);if(t)addBlock(t,x,y,z);},
  deep:function(){for(var i=0;i<waterCells.length;i++){var c=waterCells[i],ok=true;for(var dx=-1;dx<=1&&ok;dx++)for(var dz=0;dz<=5&&ok;dz++){var x=c[0]+dx,z=c[1]-dz;if(x<0||x>=SIZE||z<0||z>=SIZE||heightMap[x*SIZE+z]>=SEA_LEVEL)ok=false;}if(ok)return [c[0],c[1]];}return null;},
  give:function(t,n){inventory[t]=n;updateGear();}, boat:function(){inventory.boat=1;toggleBoat();}, posOn:function(){togglePos();}, apple:function(){inventory.apple=2;updateGear();},
+ craftPanel:function(){['wood','stone','gold','diamond','emerald','leaves'].forEach(function(m){inventory[m]=30;});toggleCraft();}, chestPanel:function(){inventory.emerald=3;inventory.charm=1;inventory.apple=2;var k=Object.keys(worldChestKeys)[0].split(',').map(Number);openChest(k[0],k[1],k[2]);},
  freeze:function(){monsters.forEach(function(m){m.speed=0;});}};

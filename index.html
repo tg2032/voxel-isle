@@ -2474,7 +2474,8 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","sprout","charm","boat"].map(function(t){
+  var RARE_STOCK = {torch:1, emerald:1, apple:1, sprout:1, charm:1, boat:1};   // only listed once you own some, to keep the row short
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","sprout","charm","boat"].filter(function(t){ return !RARE_STOCK[t] || (inventory[t] || 0) > 0; }).map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
