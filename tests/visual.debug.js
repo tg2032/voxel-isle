@@ -1,0 +1,10 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ tp:function(x,y,z){player.pos.set(x,y,z);player.vel.set(0,0,0);}, look:function(y,p){player.yaw=y;player.pitch=p;},
+ setTime:function(t){dayElapsed=t*DAY_LENGTH;updateSky(0);},
+ flat:function(){for(var x=8;x<36;x++)for(var z=14;z<36;z++){var ok=true;for(var i=0;i<10&&ok;i++)for(var dx=-3;dx<=3&&ok;dx++){if(terrainHeightAt(x+dx,z-i)!==terrainHeightAt(x,z)||terrainHeightAt(x,z)<6)ok=false;}if(ok)return [x,z,terrainHeightAt(x,z)];}return null;},
+ boss:function(x,y,z){var m=createMob(7001,x,y,z,160,'crawler');m.maxHealth=160;ensureBoss(m);m.health=70;return true;},
+ crawler:function(x,y,z){var m=createMob(7002,x,y,z,29,'crawler');m.health=12;return true;},
+ setBlock:function(x,y,z,t){if(blockAt.has(key(x,y,z)))removeBlock(x,y,z);if(t)addBlock(t,x,y,z);},
+ deep:function(){for(var i=0;i<waterCells.length;i++){var c=waterCells[i],ok=true;for(var dx=-1;dx<=1&&ok;dx++)for(var dz=0;dz<=5&&ok;dz++){var x=c[0]+dx,z=c[1]-dz;if(x<0||x>=SIZE||z<0||z>=SIZE||heightMap[x*SIZE+z]>=SEA_LEVEL)ok=false;}if(ok)return [c[0],c[1]];}return null;},
+ give:function(t,n){inventory[t]=n;updateGear();}, boat:function(){inventory.boat=1;toggleBoat();}, posOn:function(){togglePos();}, apple:function(){inventory.apple=2;updateGear();},
+ freeze:function(){monsters.forEach(function(m){m.speed=0;});}};

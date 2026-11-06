@@ -10,6 +10,7 @@ python3 tests/build.py features && node tests/features.test.js   # farming, shar
 python3 tests/build.py touch && node tests/touch.test.js         # phone: tap to play, stick sprint, tap-the-clock readout
 python3 tests/build.py peers && node tests/peers.test.js         # other players: gear in presence, avatar armor/tools, cleanup
 python3 tests/build.py boat && node tests/boat.test.js           # boat: craft, board in water, float, speed, shore dismount, shown to other players
+python3 tests/build.py visual && node tests/visual.shots.js <outdir>   # screenshots: boss at night, farm, ores, HUD (for eyeballing, no assertions)
 ```
 
 Run `node` with `NODE_PATH` pointing at the global playwright install if needed. The generated `*-local.html` files are git-ignored.
