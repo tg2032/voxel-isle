@@ -310,6 +310,7 @@
   #overlay[hidden]{ display:none; }
   #card{
     width:min(420px, calc(100vw - 32px)); box-sizing:border-box;
+    max-height:calc(100vh - 24px); max-height:calc(100dvh - 24px); overflow-y:auto; overscroll-behavior:contain;   /* the help list is long: scroll inside the card instead of being cut off */
     background:linear-gradient(180deg, var(--panel-2), var(--panel));
     border:1px solid var(--line); border-radius:16px;
     padding:28px 26px 24px; text-align:center;
@@ -440,7 +441,7 @@
       <kbd>M</kbd><span>Show or hide the <b>minimap</b></span>
       <kbd>B</kbd><span>Cycle <b>cave darkness</b> — dark / normal / bright</span>
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
-      <kbd>F</kbd><span><b>Eat</b> beef, pork or flesh when you are hungry</span>
+      <kbd>F</kbd><span><b>Eat</b> beef, pork, wheat or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
       <kbd>R</kbd><span><b>Boat</b> — craft one (6 wood), then press R while swimming to get in or out</span>
       <kbd>=</kbd><span><b>Seeds</b> — find them in grass, or craft them from leaves. Plant on grass or dirt; ripe wheat is food</span>
