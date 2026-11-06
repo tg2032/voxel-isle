@@ -381,6 +381,10 @@
   #touchUI{ display:none; --sb:env(safe-area-inset-bottom,0px); --sr:env(safe-area-inset-right,0px); --st:env(safe-area-inset-top,0px); }
   body.touch.playing #touchUI{ display:block; }
   body.touch #logo, body.touch #hint{ display:none; }
+  body.touch #topbar{ justify-content:flex-end; }   /* with the logo gone the pills would slide under the minimap */
+  body.touch #topright{ gap:4px; }
+  body.touch #myStats{ display:none; }   /* keep the top-right column short so it clears the action buttons */
+  body.touch #dangerPill, body.touch #wxPill, body.touch #posPill{ font-size:10px; padding:3px 8px; }
   body.touch #hud{ z-index:4; }
   body.touch #clock{ pointer-events:auto; }   /* tap the clock to toggle the position readout */
   #touchUI .zone{ position:fixed; touch-action:none; z-index:3; }
