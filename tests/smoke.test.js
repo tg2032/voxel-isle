@@ -8,7 +8,7 @@ await d('play');
 // world
 for(const t of ['gold_ore','diamond_ore','emerald_ore','lava','bedrock','chest']) check('world has '+t,(await d('count',t))>0);
 check('treasure chests registered',(await d('wc'))>0);
-check('hotbar has 12 items',(await d('items')).length===12);
+check('hotbar has 13 items',(await d('items')).length===13);
 // every recipe is craftable with enough materials and has an effect
 const ids=await d('recipes');console.log(ids.join(','));
 for(const m of ['wood','stone','gold','diamond','emerald','leaves']) await d('give',m,200);

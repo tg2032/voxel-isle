@@ -194,6 +194,8 @@
   }
   #vignette.hit{ opacity:1; }
 
+  #sleepFade{ position:fixed; inset:0; z-index:14; background:#02030a; opacity:0; pointer-events:none; transition:opacity 0.9s ease; }
+  #sleepFade.on{ opacity:1; }
   #deathCard{
     position:fixed; inset:0; z-index:15; display:flex; align-items:center; justify-content:center;
     background:rgba(10,6,8,0.72); backdrop-filter: blur(2px);
@@ -444,6 +446,7 @@
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
       <kbd>F</kbd><span><b>Eat</b> beef, pork, wheat or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
+      <kbd>]</kbd><span><b>Bed</b> — craft one (3 wood + 6 leaves), place it, then right-click it: at night you sleep until morning, and it becomes your respawn point</span>
       <kbd>R</kbd><span><b>Boat</b> — craft one (6 wood), then press R while swimming to get in or out</span>
       <kbd>=</kbd><span><b>Seeds</b> — find them in grass, or craft them from leaves. Plant on grass or dirt; ripe wheat is food</span>
       <kbd>V</kbd><span><b>Position</b> readout: coordinates, depth and compass heading (on a phone, tap the clock)</span>
@@ -485,6 +488,7 @@
   </div>
 </div>
 
+<div id="sleepFade" hidden></div>
 <div id="deathCard" hidden>
   <div class="display">YOU DIED<br><span id="deathCause" style="font-size:11px;color:#f3d9d6;">A crawler got you — respawning…</span></div>
 </div>
@@ -548,15 +552,15 @@
 var SIZE = 44;                // island footprint (SIZE x SIZE)
 var SEA_LEVEL = 4;             // top y of water surface
 var MAX_H = 13;
-var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest","emerald_ore","sprout","wheat"];
-var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest","sprout","wheat"];
+var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_ore","diamond_ore","bedrock","lava","chest","emerald_ore","sprout","wheat","bed"];
+var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest","sprout","wheat","bed"];
 var UNBREAKABLE = {bedrock:true, lava:true};
 var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald", wheat:"wheat"};
-var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a};
+var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a, bed:0xc0392b};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
-BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.charm = "#2ee06a"; BLOCK_SWATCH.apple = "#f2c744"; BLOCK_SWATCH.boat = "#8a5a2b"; BLOCK_SWATCH.chest = "#a0693a";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.bed = "Bed"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
+BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.bed = "#c0392b"; BLOCK_SWATCH.charm = "#2ee06a"; BLOCK_SWATCH.apple = "#f2c744"; BLOCK_SWATCH.boat = "#8a5a2b"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -1126,6 +1130,32 @@ function buildCropGeometry(u0, u1, h){
   return geo;
 }
 
+/* bed: a low wooden frame with a red mattress and a white pillow, built from coloured boxes (vertex colours) */
+function buildBedGeometry(){
+  var pos = [], col = [], nrm = [], idx = [];
+  function box(x0,y0,z0,x1,y1,z1,hex){
+    var c = new THREE.Color(hex), faces = [
+      [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1]], [[x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[0,0,-1]],
+      [[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],[0,1,0]], [[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0]],
+      [[x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[1,0,0]], [[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[-1,0,0]]];
+    faces.forEach(function(f){
+      var b = pos.length/3;
+      for(var i=0;i<4;i++){ pos.push(f[i][0], f[i][1], f[i][2]); col.push(c.r, c.g, c.b); nrm.push(f[4][0], f[4][1], f[4][2]); }
+      idx.push(b,b+1,b+2, b,b+2,b+3);
+    });
+  }
+  box(-0.47,-0.5,-0.47, 0.47,-0.2,0.47, 0x7a5330);     // frame
+  box(-0.43,-0.2,-0.43, 0.43,0.0,0.43, 0xc0392b);      // mattress
+  box(-0.36,0.0,-0.4, 0.36,0.1,-0.1, 0xf4f4f4);        // pillow
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col,3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm,3));
+  geo.setIndex(idx);
+  return geo;
+}
+var bedMaterial = new THREE.MeshLambertMaterial({vertexColors:true});
+
 var GEOMETRY = {
   grass: buildBlockGeometry("grass_side","grass_side","grass_top","dirt","grass_side","grass_side"),
   dirt:  buildBlockGeometry("dirt","dirt","dirt","dirt","dirt","dirt"),
@@ -1141,7 +1171,8 @@ var GEOMETRY = {
   chest:       buildBlockGeometry("chest","chest","chest","chest","chest","chest"),
   emerald_ore: buildBlockGeometry("emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore","emerald_ore"),
   sprout: buildCropGeometry(0, 0.5, 0.45),
-  wheat:  buildCropGeometry(0.5, 1, 0.95)
+  wheat:  buildCropGeometry(0.5, 1, 0.95),
+  bed:    buildBedGeometry()
 };
 
 /* ---------- world data ---------- */
@@ -1264,7 +1295,7 @@ BLOCK_TYPES.forEach(function(t){
   var count = 0;
   blockAt.forEach(function(v){ if(v===t) count++; });
   var maxCount = count + (PLACEABLE.indexOf(t) >= 0 ? 3000 : 400);   // room for lots of building / restored edits
-  var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : (t==="lava" ? lavaMaterial : ((t==="sprout" || t==="wheat") ? cropMaterial : atlasMaterial)), Math.max(maxCount,1));
+  var mesh = new THREE.InstancedMesh(GEOMETRY[t], t==="torch" ? torchMaterial : (t==="lava" ? lavaMaterial : ((t==="sprout" || t==="wheat") ? cropMaterial : (t==="bed" ? bedMaterial : atlasMaterial))), Math.max(maxCount,1));
   mesh.count = 0;
   scene.add(mesh);
   typeData[t] = { mesh:mesh, positions:[], posToIndex:new Map() };
@@ -1393,7 +1424,7 @@ var player = {
   dead: false
 };
 
-function solidKey(k){ var t = blockAt.get(k); return !!t && t !== "torch" && t !== "lava" && t !== "sprout" && t !== "wheat"; }
+function solidKey(k){ var t = blockAt.get(k); return !!t && t !== "torch" && t !== "lava" && t !== "sprout" && t !== "wheat" && t !== "bed"; }
 function isSolid(x,y,z){
   return solidKey(key(Math.floor(x),Math.floor(y),Math.floor(z)));
 }
@@ -1591,15 +1622,45 @@ function damagePlayer(amount, fromDX, fromDZ, quiet, cause){
 }
 var lastCause = "crawler";
 var DEATH_TEXT = {crawler:"A crawler got you", lava:"You burned in lava", fall:"You fell from too high", drown:"You ran out of air", hunger:"You starved"};
+/* beds: right-click one to set your respawn point; at night, with no monsters near, you also sleep until morning (the host decides the time of day in a shared room) */
+var spawnBed = null, sleeping = false;
+var sleepFadeEl = document.getElementById("sleepFade");
+function respawnPoint(){
+  if(spawnBed && blockAt.get(key(spawnBed[0], spawnBed[1], spawnBed[2])) === "bed") return [spawnBed[0] + 0.5, spawnBed[1] + 0.1, spawnBed[2] + 0.5, true];
+  var hadBed = !!spawnBed; spawnBed = null;
+  var cx = Math.floor(SIZE/2), cz = Math.floor(SIZE/2);
+  return [cx + 0.5, Math.max(heightMap[cx*SIZE+cz], SEA_LEVEL) + 3, cz + 0.5, false, hadBed];
+}
+function useBed(x, y, z){
+  if(player.dead || sleeping) return;
+  spawnBed = [x, y, z];
+  var night = currentSunHeight < 0.1 || (weather.state === 3 && weather.rain > 0.7);
+  if(!night){ showToast("Respawn point set. You can only sleep at night"); savePlayer(); return; }
+  var near = monsters.some(function(m){ return m.kind === "crawler" && Math.hypot(m.x - player.pos.x, m.z - player.pos.z) < 9 && Math.abs(m.y - player.pos.y) < 6; });
+  if(near){ showToast("You can't sleep with monsters nearby"); return; }
+  sleeping = true; invulnUntil = performance.now() + 3000;
+  sleepFadeEl.hidden = false; void sleepFadeEl.offsetWidth; sleepFadeEl.classList.add("on");
+  setTimeout(function(){
+    if(isHost()){ dayElapsed = DAY_LENGTH * 0.3; updateSky(0); }   // 07:12, the sun is up
+    player.hp = player.maxHp; updateHearts();
+    savePlayer();
+  }, 1000);
+  setTimeout(function(){
+    sleepFadeEl.classList.remove("on");
+    showToast(isHost() ? "You slept until morning. Respawn point set" : "Respawn point set. Only the host can skip the night");
+  }, 1900);
+  setTimeout(function(){ sleepFadeEl.hidden = true; sleeping = false; }, 2700);
+}
 function killPlayer(){
   deathCauseEl.textContent = (DEATH_TEXT[lastCause] || DEATH_TEXT.crawler) + " \u2014 respawning\u2026";
   player.dead = true;
   sfx.play("death");
   deathCard.hidden = false;
   setTimeout(function(){
-    var cx = Math.floor(SIZE/2), cz = Math.floor(SIZE/2);
-    player.pos.set(cx+0.5, Math.max(heightMap[cx*SIZE+cz], SEA_LEVEL)+3, cz+0.5);
+    var rp = respawnPoint();
+    player.pos.set(rp[0], rp[1], rp[2]);
     player.vel.set(0,0,0);
+    if(rp[4]) showToast("Your bed was gone \u2014 respawning at the island centre");
     player.hp = player.maxHp;
     player.dead = false; invulnUntil = 0;
     deathCard.hidden = true;
@@ -1622,7 +1683,7 @@ function groundHeightAt(x,z){
 }
 
 /* mobs walk on terrain only: treat wood/leaves as obstacles, never as ground (no spawning or climbing on trees) */
-function isTreeBlock(t){ return t === "wood" || t === "leaves" || t === "torch" || t === "lava" || t === "sprout" || t === "wheat"; }
+function isTreeBlock(t){ return t === "wood" || t === "leaves" || t === "torch" || t === "lava" || t === "sprout" || t === "wheat" || t === "bed"; }
 function terrainHeightAt(x,z){
   var xi=Math.floor(x), zi=Math.floor(z);
   for(var y=MAX_H+21; y>=0; y--){
@@ -2187,6 +2248,7 @@ window.addEventListener("keydown", function(e){
   else if(n==="0"){ selectSlot(9); }
   else if(n==="-"){ selectSlot(10); }
   else if(n==="="){ selectSlot(11); }
+  else if(n==="]"){ selectSlot(12); }
 });
 window.addEventListener("keyup", function(e){ keys[e.code]=false; if(e.code==="Tab") showBoard(false); });
 window.addEventListener("blur", function(){ showBoard(false); keys = {}; });
@@ -2253,10 +2315,11 @@ var ITEMS = [
   {id:"torch", kind:"block"},
   {id:"pickaxe", kind:"tool", label:"Pickaxe", icon:PICK_ICON("#b08850")},
   {id:"chest", kind:"block"},
-  {id:"sprout", kind:"block"}
+  {id:"sprout", kind:"block"},
+  {id:"bed", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0, boat:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0, boat:0, bed:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2297,7 +2360,7 @@ ITEMS.forEach(function(item,i){
   }
   var keyTag = document.createElement("span");
   keyTag.className = "key";
-  keyTag.textContent = i < 9 ? (i+1) : (i === 9 ? "0" : (i === 10 ? "-" : "="));
+  keyTag.textContent = i < 9 ? (i+1) : (i === 9 ? "0" : (i === 10 ? "-" : (i === 11 ? "=" : "]")));
   slot.appendChild(keyTag);
   slot.addEventListener("click", function(){ selectSlot(i); });
   hotbar.appendChild(slot);
@@ -2357,6 +2420,8 @@ var RECIPES = [
     cost:{gold:3, leaves:2}, once:false, apply:function(){ inventory.apple += 1; updateFoodInv(); } },
   { id:"seeds", label:"Seeds ×4", desc:"Plant them on grass or dirt (slot =) and harvest wheat to eat", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 21V11M12 11c-4 0-6-3-6-6 4 0 6 2 6 6zM12 14c4 0 6-3 6-6-4 0-6 2-6 6z" fill="#9bd24a" stroke="#3e6a1c" stroke-width="1.2"/></svg>',
     cost:{leaves:2}, once:false, apply:function(){ inventory.sprout += 4; } },
+  { id:"bed", label:"Bed", desc:"Place it and right-click it at night to sleep until morning. It also sets your respawn point", icon:'<svg class="item" viewBox="0 0 24 24"><rect x="2" y="13" width="20" height="6" rx="1" fill="#7a5330" stroke="#3a2412" stroke-width="1.1"/><rect x="3" y="9" width="18" height="5" rx="1" fill="#c0392b" stroke="#6d1d14" stroke-width="1.1"/><rect x="4" y="7" width="6" height="3" rx="1" fill="#f4f4f4" stroke="#999" stroke-width="0.8"/></svg>',
+    cost:{wood:3, leaves:6}, once:false, apply:function(){ inventory.bed += 1; updateHotbarCounts(); } },
   { id:"boat", label:"Boat", desc:"Press R while swimming to climb in: faster than swimming, no drowning", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M2 14h20l-3.5 6h-13z" fill="#8a5a2b" stroke="#4a2f14" stroke-width="1.3"/><path d="M12 3v10M12 4l7 8h-7z" fill="#f2f2f2" stroke="#666" stroke-width="1"/></svg>',
     cost:{wood:6}, once:false, apply:function(){ inventory.boat += 1; updateGear(); } },
   { id:"charm", label:"Emerald Charm", desc:"Saves you from death once: you wake with half your health. Keep it in your pack", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v7c0 4.2-3.4 6.8-8 8.5-4.6-1.7-8-4.3-8-8.5V7z" fill="#2ee06a" stroke="#0e6a30" stroke-width="1.4"/><path d="M12 7l4 2.3v4.2c0 2.2-1.7 3.7-4 4.6-2.3-.9-4-2.4-4-4.6V9.3z" fill="#9ff5bd" stroke="#0e6a30" stroke-width="0.9"/></svg>',
@@ -2372,7 +2437,7 @@ var RECIPES = [
 ];
 
 /* ---------- chests ---------- */
-var CHEST_ITEMS = ["gold","diamond","emerald","charm","apple","sprout","torch","arrows","stone","dirt","sand","wood","leaves","grass"];
+var CHEST_ITEMS = ["gold","diamond","emerald","charm","apple","sprout","bed","torch","arrows","stone","dirt","sand","wood","leaves","grass"];
 var CHESTS_KEY = "voxelChests1";
 var chestData = {}, chestOpen = false, chestCur = null;
 try{
@@ -2646,7 +2711,7 @@ function updateViewmodel(){
   var item = currentItem();
   if(item.kind==="block"){
     blockViewMesh.geometry = GEOMETRY[item.id];
-    blockViewMesh.material = (item.id === "sprout" || item.id === "wheat") ? cropMaterial : (item.id === "torch" ? torchMaterial : atlasMaterial);
+    blockViewMesh.material = (item.id === "sprout" || item.id === "wheat") ? cropMaterial : (item.id === "bed" ? bedMaterial : (item.id === "torch" ? torchMaterial : atlasMaterial));
     blockViewMesh.scale.set(0.22,0.22,0.22);
     viewGroup.add(blockViewMesh);
   } else if(item.id==="sword"){
@@ -2820,6 +2885,7 @@ function doSecondary(ndc){
   var item = currentItem();
   var hit2 = raycastBlock(ndc);
   if(hit2 && blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "chest" && !(keys.ShiftLeft || keys.ShiftRight)){ openChest(hit2.x, hit2.y, hit2.z); return; }   // right-click / tap a chest opens it; hold Shift to build against it instead
+  if(hit2 && blockAt.get(key(hit2.x,hit2.y,hit2.z)) === "bed" && !(keys.ShiftLeft || keys.ShiftRight)){ useBed(hit2.x, hit2.y, hit2.z); return; }   // right-click a bed: sleep / set the respawn point
   if(item.kind!=="block" || (inventory[item.id]||0)<=0) return;
   if(!hit2) return;
   var nx = hit2.x+hit2.normal.x, ny = hit2.y+hit2.normal.y, nz = hit2.z+hit2.normal.z;
@@ -3506,7 +3572,7 @@ var mmTerrain = document.createElement("canvas");
 mmTerrain.width = MM_SIZE * mmDpr; mmTerrain.height = MM_SIZE * mmDpr;
 var mmTerrainCtx = mmTerrain.getContext("2d");
 var mmLast = 0;
-var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], emerald_ore:[46,224,106], sprout:[120,200,70], wheat:[214,180,60], bedrock:[60,60,64], lava:[230,90,20] };
+var MM_COLORS = { grass:[104,176,78], dirt:[138,90,52], stone:[139,143,150], sand:[223,207,142], wood:[122,83,48], leaves:[52,124,52], torch:[255,170,51], chest:[160,105,58], gold_ore:[200,170,60], diamond_ore:[90,210,220], emerald_ore:[46,224,106], sprout:[120,200,70], wheat:[214,180,60], bed:[192,57,43], bedrock:[60,60,64], lava:[230,90,20] };
 
 function mmPaintColumn(x, z){
   var top = -1, type = null;
@@ -4096,6 +4162,7 @@ function updateTargetLabel(dt){
     if(t){
       text = TARGET_NAMES[t] || BLOCK_LABEL[t] || t;
       if(t === "chest") text += " \u2014 right-click / tap to open";
+      else if(t === "bed") text += " \u2014 right-click / tap to sleep or set respawn";
       else if(UNBREAKABLE[t]) text += " (can't be mined)";
     }
   }
@@ -4149,7 +4216,7 @@ function savePlayer(){
   try{
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       inv:inventory, gear:{s:swordTier, a:armorTier, h:shieldTier, p:pickTier, pv:2}, unlocked:unlocked, arrows:arrowCount, food:food, hunger:hunger, hp:player.hp,
-      pos:[player.pos.x, player.pos.y, player.pos.z], yaw:player.yaw, pitch:player.pitch, sel:selected
+      pos:[player.pos.x, player.pos.y, player.pos.z], yaw:player.yaw, pitch:player.pitch, sel:selected, bed:spawnBed
     }));
   }catch(e){}
 }
@@ -4181,6 +4248,7 @@ function savePlayer(){
     unlocked.pickaxe = pickTier > 0;
     if(swordTier > 0) unlocked.sword = true;
   }
+  if(Array.isArray(d.bed) && d.bed.length === 3 && d.bed.every(Number.isInteger)) spawnBed = d.bed;
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
   arrowCount = Math.floor(num(d.arrows, 0, 9999, 0));
   if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); food.wheat = Math.floor(num(d.food.wheat, 0, 999, 0)); }

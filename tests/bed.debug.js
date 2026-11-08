@@ -1,0 +1,13 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ setTime:function(t){dayElapsed=t*DAY_LENGTH;updateSky(0);}, time:function(){return dayElapsed/DAY_LENGTH;}, sun:function(){return currentSunHeight;},
+ give:function(t,n){inventory[t]=n;updateHotbarCounts();}, inv:function(t){return inventory[t];},
+ craft:function(id){var r=RECIPES.filter(function(x){return x.id===id;})[0];if(!canAfford(r.cost))return false;Object.keys(r.cost).forEach(function(k){inventory[k]-=r.cost[k];});r.apply();return true;},
+ sel:function(i){selectSlot(i);}, selId:function(){return ITEMS[selected].id;},
+ flat:function(){for(var x=8;x<36;x++)for(var z=10;z<36;z++){var h=terrainHeightAt(x,z);if(h>=6&&blockAt.get(key(x,h-1,z))==='grass'&&!blockAt.has(key(x,h,z)))return [x,z,h];}return null;},
+ setBlock:function(x,y,z,t){if(blockAt.has(key(x,y,z)))removeBlock(x,y,z);if(t)addBlock(t,x,y,z);}, at:function(x,y,z){return blockAt.get(key(x,y,z))||null;},
+ tp:function(x,y,z){player.pos.set(x,y,z);player.vel.set(0,0,0);player.yaw=0;player.pitch=0;}, look:function(y,p){player.yaw=y;player.pitch=p;}, sync:function(){camera.rotation.y=player.yaw;camera.rotation.x=player.pitch;camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);camera.updateMatrixWorld(true);},
+ place:function(){doSecondary();}, tgt:function(){var h=raycastBlock();return h?[h.x,h.y,h.z,h.normal.y,blockAt.get(key(h.x,h.y,h.z))]:null;},
+ useBed:function(x,y,z){useBed(x,y,z);}, bedPos:function(){return spawnBed;}, sleeping:function(){return sleeping;}, fadeOn:function(){return sleepFadeEl.classList.contains('on');}, toast:function(){return toastEl.hidden?null:toastEl.textContent;},
+ hp:function(){return player.hp;}, setHp:function(h){player.hp=h;}, kill:function(){invulnUntil=0;damagePlayer(9999,0,0,true,'fall');}, dead:function(){return player.dead;}, pos:function(){return [player.pos.x,player.pos.y,player.pos.z];},
+ crawler:function(x,y,z){monsters.slice().forEach(removeMob);var m=createMob(9300,x,y,z,29,'crawler');m.speed=0;return true;}, clearMobs:function(){monsters.slice().forEach(removeMob);},
+ save:function(){savePlayer();}, geoOk:function(){return !!GEOMETRY.bed&&!!typeData.bed;}, recipes:function(){return RECIPES.map(function(r){return r.id;});}, items:function(){return ITEMS.map(function(i){return i.id;});}};

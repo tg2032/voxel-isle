@@ -21,5 +21,6 @@ A single-file, Minecraft-like voxel game built with Three.js (r128). Open `index
 | B | Cycle cave brightness |
 | V | Position / depth / compass readout |
 | R | Board or leave the boat (craft it first, then be in water) |
+| ] | Bed slot: place a bed, right-click it at night to sleep until morning (also sets your respawn point) |
 
 The game is a single HTML file with no build step.
