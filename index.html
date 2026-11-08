@@ -2052,6 +2052,14 @@ function spawnCaveMob(origin){
   return mob;
 }
 
+/* the floor height a crawler would stand on at (nx, nz), or null when it cannot go there: steps up of one block are fine, drops of up to three too */
+function mobFloorAt(mob, nx, nz){
+  if(!(nx > 1.5 && nx < SIZE-1.5 && nz > 1.5 && nz < SIZE-1.5)) return null;
+  var gy = mob.cave ? caveFloor(nx, nz, mob.y) : terrainHeightAt(nx, nz);
+  if(mob.cave ? gy < 1 : (gy < SEA_LEVEL || treeBlocks(nx, nz, gy))) return null;
+  if(gy - mob.y > 1 || mob.y - gy > 3) return null;
+  return gy;
+}
 function updateMonsters(dt, now){
   if(!isHost()){ syncMonstersFromHost(dt); return; }
   var allCrawlers = monsters.filter(function(m){ return m.kind === "crawler"; });
@@ -2119,13 +2127,24 @@ function updateMonsters(dt, now){
       }
       moveX = Math.cos(mob.wanderAngle); moveZ = Math.sin(mob.wanderAngle);
     }
-    var nx = mob.x + moveX*mob.speed*dt;
-    var nz = mob.z + moveZ*mob.speed*dt;
-    var ngy = mob.cave ? caveFloor(nx, nz, mob.y) : terrainHeightAt(nx,nz);
-    var maxDrop = 3;
-    if(mob.cave ? (ngy >= 1 && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5)
-                : (ngy>=SEA_LEVEL && !treeBlocks(nx,nz,ngy) && ngy-mob.y <= 1 && mob.y-ngy <= maxDrop && nx>1.5 && nx<SIZE-1.5 && nz>1.5 && nz<SIZE-1.5)){
-      mob.x=nx; mob.z=nz; mob.y=ngy;
+    var step = mob.speed*dt, chasing = !!(moveX || moveZ) && tg && distToTarget < chaseRange;
+    var ngy = mobFloorAt(mob, mob.x + moveX*step, mob.z + moveZ*step);
+    if(ngy !== null){
+      mob.x += moveX*step; mob.z += moveZ*step; mob.y = ngy;
+      if(chasing) mob.steerSide = 0;   // the way is clear again: pick a fresh side next time
+    } else if(chasing){
+      /* blocked by a ledge or a wall: steer around it instead of giving up the chase (try the side that worked last time first) */
+      var base = Math.atan2(moveZ, moveX), side = mob.steerSide || (Math.random() < 0.5 ? 1 : -1), done = false;
+      [side, -side].forEach(function(sg){   // commit to one side before trying the other, otherwise it dithers at the wall
+        [0.6, 1.2, 1.9, 2.5].forEach(function(off){
+          if(done) return;
+          var ang = base + off*sg, sx = Math.cos(ang), sz = Math.sin(ang);
+          var fy = mobFloorAt(mob, mob.x + sx*step, mob.z + sz*step);
+          if(fy === null) return;
+          mob.x += sx*step; mob.z += sz*step; mob.y = fy; mob.steerSide = sg; moveX = sx; moveZ = sz; done = true;
+        });
+      });
+      if(!done) mob.steerSide = -side;   // boxed in: flip the preferred side and wait for the next frame
     } else {
       mob.wanderAngle = Math.random()*Math.PI*2;
       mob.wanderTimer = 1;
