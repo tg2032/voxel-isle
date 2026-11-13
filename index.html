@@ -352,8 +352,9 @@
   @keyframes spin{ to{ transform: rotate(360deg); } }
 
   @media (max-width:520px){
-    #hotbar{ gap:3px; padding:4px; max-width:calc(100vw - 32px); box-sizing:border-box; }
-    .slot{ width:auto; flex:1 1 0; min-width:0; max-width:46px; height:auto; aspect-ratio:1; }
+    #hotbar{ gap:3px; padding:4px; max-width:calc(100vw - 32px); box-sizing:border-box; overflow-x:auto; scrollbar-width:none; }
+    #hotbar::-webkit-scrollbar{ display:none; }
+    .slot{ width:auto; flex:1 1 0; min-width:30px; max-width:46px; height:auto; aspect-ratio:1; }   /* 13 slots: stay tappable and scroll sideways instead of shrinking */
     #bottomStack{ max-width:calc(100vw - 32px); }
     .heart, .drum{ width:13px; height:13px; }
     #hearts, #hunger{ gap:2px; }
@@ -1626,23 +1627,26 @@ var DEATH_TEXT = {crawler:"A crawler got you", lava:"You burned in lava", fall:"
 var spawnBed = null, sleeping = false;
 var sleepFadeEl = document.getElementById("sleepFade");
 function respawnPoint(){
-  if(spawnBed && blockAt.get(key(spawnBed[0], spawnBed[1], spawnBed[2])) === "bed") return [spawnBed[0] + 0.5, spawnBed[1] + 0.1, spawnBed[2] + 0.5, true];
+  if(spawnBed){
+    var bx = spawnBed[0], by = spawnBed[1], bz = spawnBed[2];
+    if(blockAt.get(key(bx, by, bz)) === "bed" && solidKey(key(bx, by-1, bz)) && !solidKey(key(bx, by+1, bz)) && !solidKey(key(bx, by+2, bz)))
+      return [bx + 0.5, by + 0.1, bz + 0.5, true];   // only while it still has a floor and headroom
+  }
   var hadBed = !!spawnBed; spawnBed = null;
   var cx = Math.floor(SIZE/2), cz = Math.floor(SIZE/2);
   return [cx + 0.5, Math.max(heightMap[cx*SIZE+cz], SEA_LEVEL) + 3, cz + 0.5, false, hadBed];
 }
 function useBed(x, y, z){
   if(player.dead || sleeping) return;
-  spawnBed = [x, y, z];
   var night = currentSunHeight < 0.1 || (weather.state === 3 && weather.rain > 0.7);
-  if(!night){ showToast("Respawn point set. You can only sleep at night"); savePlayer(); return; }
+  if(!night){ spawnBed = [x, y, z]; showToast("Respawn point set. You can only sleep at night"); savePlayer(); return; }
   var near = monsters.some(function(m){ return m.kind === "crawler" && Math.hypot(m.x - player.pos.x, m.z - player.pos.z) < 9 && Math.abs(m.y - player.pos.y) < 6; });
   if(near){ showToast("You can't sleep with monsters nearby"); return; }
+  spawnBed = [x, y, z];
   sleeping = true; invulnUntil = performance.now() + 3000;
   sleepFadeEl.hidden = false; void sleepFadeEl.offsetWidth; sleepFadeEl.classList.add("on");
   setTimeout(function(){
-    if(isHost()){ dayElapsed = DAY_LENGTH * 0.3; updateSky(0); }   // 07:12, the sun is up
-    player.hp = player.maxHp; updateHearts();
+    if(isHost()){ dayElapsed = DAY_LENGTH * 0.3; updateSky(0); player.hp = player.maxHp; updateHearts(); }   // 07:12, the sun is up; only a slept-through night heals
     savePlayer();
   }, 1000);
   setTimeout(function(){
@@ -2179,7 +2183,7 @@ function updateMonsters(dt, now){
     var distToTarget = best;
     var moveX=0, moveZ=0;
     var chaseRange = mob.cave ? 14 : 9;
-    if(tg && distToTarget < chaseRange && (!mob.cave || tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 6)){
+    if(tg && now >= (mob.noChaseUntil || 0) && distToTarget < chaseRange && (!mob.cave || tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 6)){
       moveX = dxp/distToTarget; moveZ = dzp/distToTarget;
     } else {
       mob.wanderTimer -= dt;
@@ -2189,7 +2193,7 @@ function updateMonsters(dt, now){
       }
       moveX = Math.cos(mob.wanderAngle); moveZ = Math.sin(mob.wanderAngle);
     }
-    var step = mob.speed*dt, chasing = !!(moveX || moveZ) && tg && distToTarget < chaseRange;
+    var step = mob.speed*dt, chasing = !!(moveX || moveZ) && tg && now >= (mob.noChaseUntil || 0) && distToTarget < chaseRange;
     var ngy = mobFloorAt(mob, mob.x + moveX*step, mob.z + moveZ*step);
     if(ngy !== null){
       mob.x += moveX*step; mob.z += moveZ*step; mob.y = ngy;
@@ -2206,7 +2210,11 @@ function updateMonsters(dt, now){
           mob.x += sx*step; mob.z += sz*step; mob.y = fy; mob.steerSide = sg; moveX = sx; moveZ = sz; done = true;
         });
       });
-      if(!done) mob.steerSide = -side;   // boxed in: flip the preferred side and wait for the next frame
+      if(!done){   // boxed in: flip the preferred side, and after a second give up and wander so it cannot stay frozen in a dead end
+        mob.steerSide = -side;
+        mob.stuckT = (mob.stuckT || 0) + dt;
+        if(mob.stuckT > 1){ mob.stuckT = 0; mob.wanderAngle = Math.random()*Math.PI*2; mob.wanderTimer = 1.5; mob.fleeUntil = 0; mob.noChaseUntil = now + 1500; }
+      } else mob.stuckT = 0;
     } else {
       mob.wanderAngle = Math.random()*Math.PI*2;
       mob.wanderTimer = 1;
@@ -2249,7 +2257,7 @@ window.addEventListener("keydown", function(e){
   else if(n==="0"){ selectSlot(9); }
   else if(n==="-"){ selectSlot(10); }
   else if(n==="="){ selectSlot(11); }
-  else if(n==="]"){ selectSlot(12); }
+  else if(n==="]" || e.code==="BracketRight"){ selectSlot(12); }
 });
 window.addEventListener("keyup", function(e){ keys[e.code]=false; if(e.code==="Tab") showBoard(false); });
 window.addEventListener("blur", function(){ showBoard(false); keys = {}; });
@@ -2377,6 +2385,7 @@ function selectSlot(i){
   Array.prototype.forEach.call(hotbar.children, function(el,idx){
     el.classList.toggle("active", idx===i);
   });
+  try{ hotbar.children[i].scrollIntoView({inline:"nearest", block:"nearest"}); }catch(e){}
   updateViewmodel();
 }
 function currentItem(){ return ITEMS[selected]; }
@@ -2894,6 +2903,13 @@ function doSecondary(ndc){
     var below = blockAt.get(key(hit2.x, hit2.y, hit2.z));
     if(hit2.normal.y !== 1 || (below !== "grass" && below !== "dirt") || blockAt.has(key(nx, ny, nz))){
       if(toastEl.hidden) showToast("Seeds can only be planted on top of grass or dirt");
+      return;
+    }
+  }
+  if(item.id === "bed"){   // a bed needs solid ground under it
+    var floorBlock = blockAt.get(key(nx, ny-1, nz));
+    if(!floorBlock || !solidKey(key(nx, ny-1, nz)) || floorBlock === "chest"){
+      if(toastEl.hidden) showToast("A bed needs solid ground to sit on");
       return;
     }
   }

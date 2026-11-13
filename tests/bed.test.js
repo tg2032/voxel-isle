@@ -29,6 +29,10 @@ check('sleep starts: screen fades out',(await d('sleeping'))===true);
 await p.waitForTimeout(1600);
 check('morning: the sun is up and health restored',(await d('sun'))>0.2&&(await d('hp'))>=20,`sun ${await d('sun')} hp ${await d('hp')}`);
 await p.waitForTimeout(2200);check('fade is gone afterwards',(await d('sleeping'))===false&&(await d('fadeOn'))===false);
+// a roof right above the bed makes it unsafe: respawn falls back to the island centre
+await d('setBlock',bed[0],bed[1]+1,bed[2],'stone');await p.evaluate(()=>window.__debug.tp(2.5,12,2.5));await d('kill');await p.waitForTimeout(2500);
+const unsafe=await d('pos');check('bed with a block over it is not used for respawn',Math.hypot(unsafe[0]-(bed[0]+0.5),unsafe[2]-(bed[2]+0.5))>3,JSON.stringify(unsafe));
+await d('setBlock',bed[0],bed[1]+1,bed[2],null);await d('useBed',...bed);await p.waitForTimeout(100);
 // respawn at the bed
 await p.evaluate(()=>window.__debug.tp(2.5,12,2.5));await d('kill');check('died',(await d('dead'))===true);
 await p.waitForTimeout(2500);const rp=await d('pos');
