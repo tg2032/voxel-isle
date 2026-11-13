@@ -1742,9 +1742,10 @@ function updateDangerPill(now){
   var lvl = df.nf < 0.34 ? 0 : (df.nf < 0.8 ? 1 : 2);
   el.textContent = "Danger: " + DANGER_NAMES[lvl] + " " + "\u25A0".repeat(lvl + 1) + "\u25A1".repeat(2 - lvl);
 }
-var mobBodyMat = new THREE.MeshLambertMaterial({color:0x4c8a46});
-var mobHeadMat = new THREE.MeshLambertMaterial({color:0x3f7a3a});
-var mobLimbMat = new THREE.MeshLambertMaterial({color:0x2a3a24});
+/* a faint self-glow keeps enemies readable against the dark night terrain */
+var mobBodyMat = new THREE.MeshLambertMaterial({color:0x4c8a46, emissive:0x1d4a1a});
+var mobHeadMat = new THREE.MeshLambertMaterial({color:0x3f7a3a, emissive:0x1a4217});
+var mobLimbMat = new THREE.MeshLambertMaterial({color:0x2a3a24, emissive:0x122410});
 var mobEyeMat  = new THREE.MeshBasicMaterial({color:0xff3b3b});
 
 function makeMobMesh(){
@@ -1843,7 +1844,7 @@ function createMob(id, x, y, z, health, kind){
   return mob;
 }
 
-var bossBodyMat = new THREE.MeshLambertMaterial({color:0x5b2a86}), bossHeadMat = new THREE.MeshLambertMaterial({color:0x44206a});
+var bossBodyMat = new THREE.MeshLambertMaterial({color:0x5b2a86, emissive:0x2a1048}), bossHeadMat = new THREE.MeshLambertMaterial({color:0x44206a, emissive:0x220c3c});
 function ensureBoss(mob){
   if(mob.boss || mob.kind !== "crawler" || mob.maxHealth < BOSS_MIN) return;
   mob.boss = true;
