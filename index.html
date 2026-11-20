@@ -1285,6 +1285,45 @@ for(var cxx=0; cxx<SIZE; cxx++) for(var czz=0; czz<SIZE; czz++){
     if(hash2(cxx*4.31 + cyy*8.7, czz*6.13 + cyy*2.9) > 0.9) { blockAt.set(key(cxx,cyy,czz), "chest"); worldChestKeys[key(cxx,cyy,czz)] = 1; }
   }
 }
+/* ruins: a few small broken stone enclosures on flat ground, each with a richer treasure chest (placed from hashes only, so the tree layout and every client's world are unchanged) */
+var worldRuins = [];
+(function buildRuins(){
+  for(var i=0; i<4000 && worldRuins.length<3; i++){
+    var ax = 4 + Math.floor(hash2(i*7.13 + 1.7, 3.3) * (SIZE-9)), az = 4 + Math.floor(hash2(i*5.31 + 9.1, 8.8) * (SIZE-9));
+    var ok = Math.hypot(ax+2 - SIZE/2, az+2 - SIZE/2) > 8, lo = 99, hi = 0, hs = [];
+    for(var q=0; q<worldRuins.length && ok; q++) if(Math.hypot(worldRuins[q][0]-ax, worldRuins[q][2]-az) < 14) ok = false;
+    for(var dx=-1; dx<=5 && ok; dx++) for(var dz=-1; dz<=5 && ok; dz++){
+      var hh = heightMap[(ax+dx)*SIZE+(az+dz)];
+      if(hh < SEA_LEVEL + 2){ ok = false; break; }
+      lo = Math.min(lo, hh); hi = Math.max(hi, hh); hs.push(hh);
+      var inside = dx >= 0 && dx <= 4 && dz >= 0 && dz <= 4;
+      for(var dy=0; dy<(inside ? 4 : 1) && ok; dy++) if(blockAt.has(key(ax+dx, hh+dy, az+dz))) ok = false;   // no trees where the walls go, and no trunk on the levelled margin
+    }
+    if(!ok || hi - lo > 3) continue;
+    hs.sort(function(a,b){ return a-b; });
+    var base = hs[Math.floor(hs.length/2)];
+    for(var fx=-1; fx<=5; fx++) for(var fz=-1; fz<=5; fz++){   // level the site to its median height
+      var cx = ax+fx, cz = az+fz, cur = heightMap[cx*SIZE+cz];
+      for(var y1=cur-1; y1>=base; y1--) blockAt.delete(key(cx, y1, cz));
+      for(var y2=cur; y2<base; y2++) blockAt.set(key(cx, y2, cz), y2 === base-1 ? "grass" : "dirt");
+      if(cur < base) blockAt.set(key(cx, cur-1, cz), "dirt");
+      if(cur > base) blockAt.set(key(cx, base-1, cz), "grass");
+      heightMap[cx*SIZE+cz] = base;
+    }
+    var door = Math.floor(hash2(i*2.9, 6.1) * 4);   // which side has the gap
+    for(var wx=0; wx<5; wx++) for(var wz=0; wz<5; wz++){
+      if(!(wx===0 || wx===4 || wz===0 || wz===4)) continue;
+      var corner = (wx===0 || wx===4) && (wz===0 || wz===4);
+      var isDoor = (door===0 && wz===0 && wx===2) || (door===1 && wz===4 && wx===2) || (door===2 && wx===0 && wz===2) || (door===3 && wx===4 && wz===2);
+      if(isDoor) continue;
+      var hgt = corner ? 3 : (hash2((ax+wx)*3.1, (az+wz)*4.7) > 0.45 ? 2 : 1);   // crumbled walls
+      for(var h2=0; h2<hgt; h2++) blockAt.set(key(ax+wx, base+h2, az+wz), "stone");
+    }
+    var ck = key(ax+2, base, az+2);
+    blockAt.set(ck, "chest"); worldChestKeys[ck] = 2;
+    worldRuins.push([ax+2, base, az+2]);
+  }
+})();
 var waterCells = [];
 for(var x=0;x<SIZE;x++){
   for(var z=0;z<SIZE;z++){
@@ -2508,15 +2547,18 @@ function applyRemoteChest(d){
   if(chestOpen && chestCur === d.k) renderChest();
 }
 function chestRand(x,y,z,n){ return hash2(x*12.9898 + y*78.233 + n*37.719, z*4.1414 + n*11.13); }
-function lootFor(x,y,z){
+function lootFor(x,y,z,rich){
   var loot = { gold: 2 + Math.floor(chestRand(x,y,z,1)*5), torch: 3 + Math.floor(chestRand(x,y,z,2)*6), arrows: 4 + Math.floor(chestRand(x,y,z,3)*8) };
   if(chestRand(x,y,z,4) > 0.5) loot.diamond = 1 + Math.floor(chestRand(x,y,z,5)*2);
+  if(rich){   // ruin chests: more of everything, plus emeralds and golden apples
+    loot.gold += 6; loot.diamond = (loot.diamond || 0) + 2; loot.emerald = 2 + Math.floor(chestRand(x,y,z,6)*3); loot.apple = 1 + Math.floor(chestRand(x,y,z,7)*2);
+  }
   return loot;
 }
 function chestContents(k){
   if(!chestData[k]){
     var parts = k.split(",");
-    chestData[k] = worldChestKeys[k] ? lootFor(+parts[0], +parts[1], +parts[2]) : {};
+    chestData[k] = worldChestKeys[k] ? lootFor(+parts[0], +parts[1], +parts[2], worldChestKeys[k] === 2) : {};
     delete worldChestKeys[k];     // from now on it is an ordinary chest with whatever is left in it
     saveChests();
     pushChest(k);                 // claim it in the shared db so other players see the same loot

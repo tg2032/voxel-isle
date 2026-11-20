@@ -1,0 +1,6 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ ruins:function(){return JSON.stringify(worldRuins);}, chestKind:function(x,y,z){return worldChestKeys[key(x,y,z)]||0;}, at:function(x,y,z){return blockAt.get(key(x,y,z))||null;},
+ base:function(x,z){return heightMap[x*SIZE+z];}, loot:function(x,y,z){return JSON.stringify(lootFor(x,y,z,true));}, plain:function(x,y,z){return JSON.stringify(lootFor(x,y,z,false));},
+ trees:function(){var n=0;blockAt.forEach(function(v){if(v==='wood')n++;});return n;}, count:function(t){var n=0;blockAt.forEach(function(v){if(v===t)n++;});return n;},
+ openChest:function(x,y,z){openChest(x,y,z);}, rows:function(){return Array.from(chestListEl.querySelectorAll('.crow')).map(function(r){return r.querySelector('.nm').textContent+':'+r.querySelector('.ct').textContent;});},
+ reach:function(){ /* a mob-free walkability check: from outside, can a player-sized path reach each ruin chest through the door gap? */ var out=[];worldRuins.forEach(function(r){var x=r[0],y=r[1],z=r[2],seen={},q=[[x,z]],ok=false;seen[x+','+z]=1;while(q.length){var c=q.shift();if(Math.abs(c[0]-x)>4||Math.abs(c[1]-z)>4){ok=true;break;}[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nx=c[0]+d[0],nz=c[1]+d[1],k=nx+','+nz;if(seen[k])return;if(blockAt.get(key(nx,y,nz))==='stone')return;seen[k]=1;q.push([nx,nz]);});}out.push(ok);});return out;}};
