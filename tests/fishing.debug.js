@@ -1,0 +1,10 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ deep:function(){for(var i=0;i<waterCells.length;i++){var c=waterCells[i],ok=true;for(var dx=-1;dx<=1&&ok;dx++)for(var dz=0;dz<=5&&ok;dz++){var x=c[0]+dx,z=c[1]-dz;if(x<0||x>=SIZE||z<0||z>=SIZE||heightMap[x*SIZE+z]>=SEA_LEVEL)ok=false;}if(ok)return [c[0],c[1]];}return null;},
+ land:function(){for(var x=2;x<SIZE-2;x++)for(var z=2;z<SIZE-2;z++){if(heightMap[x*SIZE+z]>=SEA_LEVEL+1)return [x,z,heightMap[x*SIZE+z]];}return null;},
+ stage:function(x,y,z,yaw,pitch){player.pos.set(x,y,z);player.vel.set(0,0,0);player.yaw=yaw;player.pitch=pitch;camera.rotation.set(pitch,yaw,0,'YXZ');camera.position.set(x,y+player.eye,z);camera.updateMatrixWorld(true);},
+ give:function(t,n){inventory[t]=n;updateGear();}, inv:function(t){return inventory[t];},
+ craft:function(id){var r=RECIPES.filter(function(x){return x.id===id;})[0];if(!canAfford(r.cost))return false;Object.keys(r.cost).forEach(function(k){inventory[k]-=r.cost[k];});r.apply();return true;},
+ press:function(){reelFish();}, phase:function(){return fishing?fishing.phase:null;}, forceBite:function(){if(fishing){fishing.phase='bite';fishing.t=1.6;}}, forceWait:function(){if(fishing){fishing.phase='wait';fishing.t=99;}}, expire:function(){if(fishing)fishing.t=0.01;},
+ bobberVisible:function(){return bobber.visible;}, toast:function(){return toastEl.hidden?null:toastEl.textContent;}, food:function(){return JSON.stringify(food);}, tfish:function(){var e=document.getElementById('tFish');return e?e.hidden:null;},
+ rig:function(n){var r=Math.random,c={fish:0,gold:0,emerald:0,diamond:0,leaves:0};for(var i=0;i<n;i++){var f0=food.fish,g0=inventory.gold,e0=inventory.emerald,d0=inventory.diamond,l0=inventory.leaves;fishing={phase:'bite',t:1,x:0,z:0};reelFish();if(food.fish>f0)c.fish++;else if(inventory.gold>g0)c.gold++;else if(inventory.emerald>e0)c.emerald++;else if(inventory.diamond>d0)c.diamond++;else c.leaves++;}return c;},
+ eatFish:function(){food.fish=2;food.beef=0;food.mutton=0;hunger=5;eatFood();return [hunger,food.fish];}};
