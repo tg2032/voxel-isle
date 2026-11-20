@@ -11,4 +11,5 @@ window.__debug={play:function(){locked=true;syncOverlay();},
  die:function(){lastCause='lava';killPlayer();}, board:function(){rankRows=[{id:'aaaa1111',kills:12,built:40},{id:'bbbb2222',kills:5,built:300},{id:'cccc3333',kills:0,built:2}];showBoard(true);}, chat:function(){chatEl.hidden=false;addChatLine('abc',false,'hello from another player');addChatLine('me',true,'hi!');},
  counts:function(){var c=monsters.filter(function(m){return m.kind==='crawler'&&!m.cave;}).length;return JSON.stringify({crawlers:c,all:monsters.length,sun:currentSunHeight,nf:difficulty().nf,cap:difficulty().cap,interval:difficulty().interval,host:isHost(),dead:player.dead,t:dayElapsed/DAY_LENGTH});},
  bedScene:function(x,y,z){addBlock('bed',x,y,z);addBlock('bed',x+2,y,z);},
+ animals:function(x,y,z){monsters.slice().forEach(removeMob);createMob(7101,x-2,y,z,15,'pig');createMob(7102,x,y,z,25,'cow');createMob(7103,x+2,y,z,18,'sheep');monsters.forEach(function(m){m.speed=0;m.idle=true;m.wanderTimer=999;});},
  freeze:function(){monsters.forEach(function(m){m.speed=0;});}};

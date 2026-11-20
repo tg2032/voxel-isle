@@ -445,7 +445,7 @@
       <kbd>M</kbd><span>Show or hide the <b>minimap</b></span>
       <kbd>B</kbd><span>Cycle <b>cave darkness</b> — dark / normal / bright</span>
       <kbd>K</kbd><span>Turn <b>sound</b> on or off</span>
-      <kbd>F</kbd><span><b>Eat</b> beef, pork, wheat or flesh when you are hungry</span>
+      <kbd>F</kbd><span><b>Eat</b> beef, mutton, pork, wheat or flesh when you are hungry</span>
       <kbd>G</kbd><span><b>Golden apple</b> — craft it (3 gold + 2 leaves) to heal 5 hearts</span>
       <kbd>]</kbd><span><b>Bed</b> — craft one (3 wood + 6 leaves), place it, then right-click it: at night you sleep until morning, and it becomes your respawn point</span>
       <kbd>R</kbd><span><b>Boat</b> — craft one (6 wood), then press R while swimming to get in or out</span>
@@ -557,11 +557,11 @@ var BLOCK_TYPES = ["grass","dirt","stone","sand","wood","leaves","torch","gold_o
 var PLACEABLE = ["grass","dirt","stone","sand","wood","leaves","torch","chest","sprout","wheat","bed"];
 var UNBREAKABLE = {bedrock:true, lava:true};
 var ORE_DROP = {gold_ore:"gold", diamond_ore:"diamond", emerald_ore:"emerald", wheat:"wheat"};
-var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a, bed:0xc0392b};
+var DROP_COLORS = {gold:0xffd24a, diamond:0x4de1e8, emerald:0x2ee06a, sprout:0x9bd24a, bed:0xc0392b, wool:0xf4f4f4};
 var BLOCK_LABEL = {grass:"Grass",dirt:"Dirt",stone:"Stone",sand:"Sand",wood:"Wood",leaves:"Leaves",torch:"Torch"};
 var BLOCK_SWATCH = {grass:"#6fbf50",dirt:"#8a5a34",stone:"#8b8f96",sand:"#dfcf8e",wood:"#7a5330",leaves:"#3f8f3a",torch:"#ffaa33"};
-BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.bed = "Bed"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
-BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.bed = "#c0392b"; BLOCK_SWATCH.charm = "#2ee06a"; BLOCK_SWATCH.apple = "#f2c744"; BLOCK_SWATCH.boat = "#8a5a2b"; BLOCK_SWATCH.chest = "#a0693a";
+BLOCK_LABEL.gold = "Gold"; BLOCK_LABEL.diamond = "Diamond"; BLOCK_LABEL.chest = "Chest"; BLOCK_LABEL.apple = "Golden Apple"; BLOCK_LABEL.arrows = "Arrows"; BLOCK_LABEL.emerald = "Emerald"; BLOCK_LABEL.sprout = "Seeds"; BLOCK_LABEL.bed = "Bed"; BLOCK_LABEL.wool = "Wool"; BLOCK_LABEL.wheat = "Wheat"; BLOCK_LABEL.charm = "Emerald Charm"; BLOCK_LABEL.boat = "Boat";
+BLOCK_SWATCH.gold = "#ffd24a"; BLOCK_SWATCH.diamond = "#4de1e8"; BLOCK_SWATCH.emerald = "#2ee06a"; BLOCK_SWATCH.sprout = "#9bd24a"; BLOCK_SWATCH.bed = "#c0392b"; BLOCK_SWATCH.wool = "#f0eee8"; BLOCK_SWATCH.charm = "#2ee06a"; BLOCK_SWATCH.apple = "#f2c744"; BLOCK_SWATCH.boat = "#8a5a2b"; BLOCK_SWATCH.chest = "#a0693a";
 
 /* ---------- deterministic value noise ---------- */
 function hash2(x,y){
@@ -1485,12 +1485,13 @@ function updateHearts(){
 /* ---------- hunger and food ---------- */
 var HUNGER_MAX = 20;
 var hunger = HUNGER_MAX, starveTimer = 0, regenTimer = 0, lastHungerKey = -1;
-var food = { pork:0, beef:0, flesh:0, wheat:0 };
+var food = { pork:0, beef:0, flesh:0, wheat:0, mutton:0 };
 var FOODS = {
   pork:  { label:"Pork",  value:6, color:0xf0a5a0 },
   beef:  { label:"Beef",  value:8, color:0xc04030 },
   flesh: { label:"Flesh", value:3, color:0x7b9440 },
-  wheat: { label:"Wheat", value:4, color:0xe8c64a }
+  wheat: { label:"Wheat", value:4, color:0xe8c64a },
+  mutton: { label:"Mutton", value:7, color:0xc9776a }
 };
 var hungerEl = document.getElementById("hunger");
 var foodInvEl = document.getElementById("foodInv");
@@ -1533,9 +1534,9 @@ function updateHungerUI(){
 }
 function updateFoodInv(){
   var apples = inventory.apple || 0;
-  if(food.pork + food.beef + food.flesh + food.wheat + apples <= 0){ foodInvEl.hidden = true; return; }
+  if(food.pork + food.beef + food.flesh + food.wheat + food.mutton + apples <= 0){ foodInvEl.hidden = true; return; }
   foodInvEl.hidden = false;
-  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Wheat <b>" + food.wheat + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat"
+  foodInvEl.innerHTML = "Pork <b>" + food.pork + "</b> · Beef <b>" + food.beef + "</b> · Mutton <b>" + food.mutton + "</b> · Wheat <b>" + food.wheat + "</b> · Flesh <b>" + food.flesh + "</b> · <b>F</b> to eat"
     + (apples > 0 ? " · Golden Apple <b>" + apples + "</b> · <b>G</b> to heal" : "");
 }
 function useApple(){
@@ -1550,7 +1551,7 @@ function useApple(){
 }
 function eatFood(){
   if(player.dead || hunger >= HUNGER_MAX - 0.5) return false;
-  var t = food.beef > 0 ? "beef" : (food.pork > 0 ? "pork" : (food.wheat > 0 ? "wheat" : (food.flesh > 0 ? "flesh" : null)));
+  var t = food.beef > 0 ? "beef" : (food.mutton > 0 ? "mutton" : food.pork > 0 ? "pork" : (food.wheat > 0 ? "wheat" : (food.flesh > 0 ? "flesh" : null)));
   if(!t) return false;
   food[t]--;
   hunger = Math.min(HUNGER_MAX, hunger + FOODS[t].value);
@@ -1717,7 +1718,7 @@ function makeBar(){
   g.visible = false;
   return g;
 }
-var BAR_HEIGHT = {crawler:1.85, pig:1.2, cow:1.4};
+var BAR_HEIGHT = {crawler:1.85, pig:1.2, cow:1.4, sheep:1.3};
 var BOSS_HP = 160, BOSS_MIN = 100;   // a crawler whose max health is at least BOSS_MIN is the Night Warden (no extra sync field needed)
 function updateMobBars(){
   for(var i=0; i<monsters.length; i++){
@@ -1774,7 +1775,7 @@ function makeMobMesh(){
   return group;
 }
 
-var KINDS = ["crawler", "pig", "cow"];
+var KINDS = ["crawler", "pig", "cow", "sheep"];   // append only: the index is what peers exchange
 function makeAnimalMesh(kind){
   var g = new THREE.Group();
   var cow = kind === "cow";
@@ -1782,6 +1783,18 @@ function makeAnimalMesh(kind){
     var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:color}));
     m.userData.ownMat = true;
     m.position.set(x,y,z); g.add(m); return m;
+  }
+  if(kind === "sheep"){   // woolly white body, dark face and legs
+    part(0.66,0.58,0.98, 0xf0eee8, 0,0.7,0);
+    part(0.36,0.34,0.36, 0x3f3b37, 0,0.84,0.62);
+    part(0.42,0.2,0.2, 0xf0eee8, 0,1.05,0.5);
+    part(0.06,0.06,0.03, 0xf5f5f5, -0.09,0.88,0.81); part(0.06,0.06,0.03, 0xf5f5f5, 0.09,0.88,0.81);
+    var sl = [
+      part(0.15,0.42,0.15, 0x3f3b37, -0.17,0.21,0.32), part(0.15,0.42,0.15, 0x3f3b37, 0.17,0.21,0.32),
+      part(0.15,0.42,0.15, 0x3f3b37, -0.17,0.21,-0.32), part(0.15,0.42,0.15, 0x3f3b37, 0.17,0.21,-0.32)
+    ];
+    g.userData.legs = sl; g.userData.arms = [];
+    return g;
   }
   part(0.5,0.5,0.9, cow ? 0x4a3526 : 0xf2a7a7, 0,0.62,0);
   if(cow) part(0.52,0.28,0.4, 0xe8e2d8, 0,0.66,-0.12);
@@ -1904,14 +1917,16 @@ function spawnMob(boss){
   mob.dmg = df.dmg; mob.speed *= df.speed;
 }
 
+var ANIMAL_HP = {pig:15, cow:25, sheep:18};
 function spawnAnimal(){
   var x = 3 + Math.random()*(SIZE-6), z = 3 + Math.random()*(SIZE-6);
   var gy = terrainHeightAt(x,z);
   if(gy < SEA_LEVEL + 1 || treeBlocks(x,z,gy)) return;
   if(blockAt.get(key(Math.floor(x), gy-1, Math.floor(z))) !== "grass") return;
   monsters.forEach(function(m){ if(m.id >= nextMobId) nextMobId = m.id + 1; });
-  var kind = Math.random() < 0.5 ? "pig" : "cow";
-  createMob(nextMobId++, x, gy, z, kind === "pig" ? 15 : 25, kind);
+  var roll = Math.random();
+  var kind = roll < 0.34 ? "pig" : (roll < 0.67 ? "cow" : "sheep");
+  createMob(nextMobId++, x, gy, z, ANIMAL_HP[kind], kind);
 }
 
 function removeMob(mob){
@@ -1954,9 +1969,10 @@ function damageMob(mob, amount, dirX, dirZ, byPeer){
       if(Math.random()<0.4) loot.push(MOB_LOOT[Math.floor(Math.random()*MOB_LOOT.length)]);
       if(Math.random()<0.65) loot.push("flesh");
     } else {
-      var isCow = mob.kind === "cow";
-      loot = [isCow ? "beef" : "pork"];
-      if(Math.random()<0.5) loot.push(isCow ? "beef" : "pork");
+      var meat = {cow:"beef", sheep:"mutton"}[mob.kind] || "pork";
+      loot = [meat];
+      if(Math.random()<0.5) loot.push(meat);
+      if(mob.kind === "sheep"){ loot.push("wool"); if(Math.random()<0.5) loot.push("wool"); }
     }
     if(byPeer && net.room){
       net.room.emit("mobdie", {to:byPeer, k:hostile?1:0, loot:loot, x:Math.round(mob.x*100)/100, y:Math.round(mob.y*100)/100, z:Math.round(mob.z*100)/100}).catch(function(){});
@@ -2332,7 +2348,7 @@ var ITEMS = [
   {id:"bed", kind:"block"}
 ];
 
-var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0, boat:0, bed:0};
+var inventory = {grass:12, dirt:12, stone:10, sand:8, wood:10, leaves:14, torch:0, gold:0, diamond:0, chest:0, apple:0, emerald:0, charm:0, sprout:0, boat:0, bed:0, wool:0};
 var unlocked = {sword:false, bow:false, pickaxe:false};
 var arrowCount = 0;
 var swordTier = 0, armorTier = 0, shieldTier = 0, pickTier = 0;   // pickTier: 0 none, 1 wood, 2 stone, 3 gold, 4 diamond   // 0 none/iron, 1 gold, 2 diamond
@@ -2436,6 +2452,8 @@ var RECIPES = [
     cost:{leaves:2}, once:false, apply:function(){ inventory.sprout += 4; } },
   { id:"bed", label:"Bed", desc:"Place it and right-click it at night to sleep until morning. It also sets your respawn point", icon:'<svg class="item" viewBox="0 0 24 24"><rect x="2" y="13" width="20" height="6" rx="1" fill="#7a5330" stroke="#3a2412" stroke-width="1.1"/><rect x="3" y="9" width="18" height="5" rx="1" fill="#c0392b" stroke="#6d1d14" stroke-width="1.1"/><rect x="4" y="7" width="6" height="3" rx="1" fill="#f4f4f4" stroke="#999" stroke-width="0.8"/></svg>',
     cost:{wood:3, leaves:6}, once:false, apply:function(){ inventory.bed += 1; updateHotbarCounts(); } },
+  { id:"bed_wool", label:"Bed (wool)", desc:"A cheaper bed from sheep wool: 3 wood + 3 wool", icon:'<svg class="item" viewBox="0 0 24 24"><rect x="2" y="13" width="20" height="6" rx="1" fill="#7a5330" stroke="#3a2412" stroke-width="1.1"/><rect x="3" y="9" width="18" height="5" rx="1" fill="#f0eee8" stroke="#999" stroke-width="1.1"/><rect x="4" y="7" width="6" height="3" rx="1" fill="#fff" stroke="#999" stroke-width="0.8"/></svg>',
+    cost:{wood:3, wool:3}, once:false, apply:function(){ inventory.bed += 1; updateHotbarCounts(); } },
   { id:"boat", label:"Boat", desc:"Press R while swimming to climb in: faster than swimming, no drowning", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M2 14h20l-3.5 6h-13z" fill="#8a5a2b" stroke="#4a2f14" stroke-width="1.3"/><path d="M12 3v10M12 4l7 8h-7z" fill="#f2f2f2" stroke="#666" stroke-width="1"/></svg>',
     cost:{wood:6}, once:false, apply:function(){ inventory.boat += 1; updateGear(); } },
   { id:"charm", label:"Emerald Charm", desc:"Saves you from death once: you wake with half your health. Keep it in your pack", icon:'<svg class="item" viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v7c0 4.2-3.4 6.8-8 8.5-4.6-1.7-8-4.3-8-8.5V7z" fill="#2ee06a" stroke="#0e6a30" stroke-width="1.4"/><path d="M12 7l4 2.3v4.2c0 2.2-1.7 3.7-4 4.6-2.3-.9-4-2.4-4-4.6V9.3z" fill="#9ff5bd" stroke="#0e6a30" stroke-width="0.9"/></svg>',
@@ -2451,7 +2469,7 @@ var RECIPES = [
 ];
 
 /* ---------- chests ---------- */
-var CHEST_ITEMS = ["gold","diamond","emerald","charm","apple","sprout","bed","torch","arrows","stone","dirt","sand","wood","leaves","grass"];
+var CHEST_ITEMS = ["gold","diamond","emerald","charm","apple","sprout","bed","wool","torch","arrows","stone","dirt","sand","wood","leaves","grass"];
 var CHESTS_KEY = "voxelChests1";
 var chestData = {}, chestOpen = false, chestCur = null;
 try{
@@ -2574,8 +2592,8 @@ function costText(cost){
   }).join(" + ");
 }
 function renderStock(){
-  var RARE_STOCK = {torch:1, emerald:1, apple:1, sprout:1, charm:1, boat:1};   // only listed once you own some, to keep the row short
-  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","sprout","charm","boat"].filter(function(t){ return !RARE_STOCK[t] || (inventory[t] || 0) > 0; }).map(function(t){
+  var RARE_STOCK = {torch:1, emerald:1, apple:1, sprout:1, charm:1, boat:1, wool:1};   // only listed once you own some, to keep the row short
+  stockRowEl.innerHTML = ["grass","dirt","stone","sand","wood","leaves","torch","gold","diamond","emerald","apple","sprout","charm","boat","wool"].filter(function(t){ return !RARE_STOCK[t] || (inventory[t] || 0) > 0; }).map(function(t){
     return '<div class="stockItem"><span class="dot" style="background:'+BLOCK_SWATCH[t]+'"></span>'+BLOCK_LABEL[t]+' '+(inventory[t]||0)+'</div>';
   }).join("");
 }
@@ -3539,7 +3557,7 @@ chatInputEl.addEventListener("keydown", function(e){
       var d = msg.data;
       if(msg.peer !== net.hostPeer || !d || d.to !== net.myPeer || !Array.isArray(d.loot)) return;
       if(!isFiniteNum(d.x) || !isFiniteNum(d.y) || !isFiniteNum(d.z)) return;
-      d.loot.slice(0,4).forEach(function(t){ if(MOB_LOOT.indexOf(t) >= 0 || t === "gold" || t === "diamond" || Object.prototype.hasOwnProperty.call(FOODS, t)) spawnDrop(t, d.x, d.y+0.6, d.z); });
+      d.loot.slice(0,4).forEach(function(t){ if(MOB_LOOT.indexOf(t) >= 0 || t === "gold" || t === "diamond" || t === "wool" || Object.prototype.hasOwnProperty.call(FOODS, t)) spawnDrop(t, d.x, d.y+0.6, d.z); });
       if(d.k === 1) recordKill();
     });
     net.room.on("pdmg", function(msg){
@@ -3647,7 +3665,7 @@ function updateMinimap(now){
   drops.forEach(function(d){ mmDot(d.mesh.position.x, d.mesh.position.z, 1.4, "#ffd76a"); });
   monsters.forEach(function(m){
     if(m.kind === "crawler") mmDot(m.x, m.z, m.boss ? 4 : 2.3, m.boss ? "#a43cf0" : "#e5393a", "rgba(0,0,0,0.6)");
-    else mmDot(m.x, m.z, 2, m.kind === "pig" ? "#f7a8c4" : "#d1b48a", "rgba(0,0,0,0.5)");
+    else mmDot(m.x, m.z, 2, m.kind === "pig" ? "#f7a8c4" : (m.kind === "sheep" ? "#f2f2f2" : "#d1b48a"), "rgba(0,0,0,0.5)");
   });
   Object.keys(avatars).forEach(function(id){
     var pos = avatars[id].mesh.position;
@@ -4275,7 +4293,7 @@ function savePlayer(){
   if(Array.isArray(d.bed) && d.bed.length === 3 && d.bed.every(Number.isInteger)) spawnBed = d.bed;
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
   arrowCount = Math.floor(num(d.arrows, 0, 9999, 0));
-  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); food.wheat = Math.floor(num(d.food.wheat, 0, 999, 0)); }
+  if(d.food){ food.pork = Math.floor(num(d.food.pork, 0, 999, 0)); food.beef = Math.floor(num(d.food.beef, 0, 999, 0)); food.flesh = Math.floor(num(d.food.flesh, 0, 999, 0)); food.wheat = Math.floor(num(d.food.wheat, 0, 999, 0)); food.mutton = Math.floor(num(d.food.mutton, 0, 999, 0)); }
   hunger = num(d.hunger, 0, HUNGER_MAX, HUNGER_MAX);
   player.hp = (typeof d.hp === "number" && d.hp >= 1) ? Math.min(player.maxHp, Math.round(d.hp)) : player.maxHp;
   if(Array.isArray(d.pos)){

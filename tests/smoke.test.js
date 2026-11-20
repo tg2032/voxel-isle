@@ -11,7 +11,7 @@ check('treasure chests registered',(await d('wc'))>0);
 check('hotbar has 13 items',(await d('items')).length===13);
 // every recipe is craftable with enough materials and has an effect
 const ids=await d('recipes');console.log(ids.join(','));
-for(const m of ['wood','stone','gold','diamond','emerald','leaves']) await d('give',m,200);
+for(const m of ['wood','stone','gold','diamond','emerald','leaves','wool']) await d('give',m,200);
 let okAll=true;const bad=[];for(const id of ids){const r=await d('craft',id);if(!r){okAll=false;bad.push(id);}}
 check('every recipe craftable ('+ids.length+')',okAll,bad.join(','));
 check('gear reached top tiers',JSON.stringify(await d('tiers'))==='[2,2,2,4]',JSON.stringify(await d('tiers')));

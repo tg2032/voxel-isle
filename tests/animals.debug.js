@@ -1,0 +1,10 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ setTime:function(t){dayElapsed=t*DAY_LENGTH;updateSky(0);},
+ give:function(t,n){inventory[t]=n;updateHotbarCounts();}, inv:function(t){return inventory[t];},
+ craft:function(id){var r=RECIPES.filter(function(x){return x.id===id;})[0];if(!r||!canAfford(r.cost))return false;Object.keys(r.cost).forEach(function(k){inventory[k]-=r.cost[k];});r.apply();return true;},
+ kinds:function(){return KINDS.slice();},
+ spawnSheep:function(){monsters.slice().forEach(removeMob);var m=createMob(9500,20.5,8,20.5,ANIMAL_HP.sheep,'sheep');return {legs:m.group.userData.legs.length,kids:m.group.children.length,hp:m.health,bar:BAR_HEIGHT.sheep};},
+ kill:function(){var m=monsters.filter(function(q){return q.id===9500;})[0];drops.length=0;damageMob(m,999,0,0,null);return drops.map(function(d){return d.type;}).sort();},
+ many:function(){monsters.slice().forEach(removeMob);var c={pig:0,cow:0,sheep:0};for(var i=0;i<400;i++){spawnAnimal();}monsters.forEach(function(m){if(c[m.kind]!==undefined)c[m.kind]++;});return c;},
+ food:function(){return JSON.stringify(food);}, setFood:function(k,n){food[k]=n;updateFoodInv();}, hunger:function(){return hunger;}, setHunger:function(h){hunger=h;}, eat:function(){return eatFood();}, foodLine:function(){return foodInvEl.hidden?null:foodInvEl.textContent;},
+ stockHas:function(){renderStock();return stockRowEl.textContent;}, save:function(){savePlayer();}};

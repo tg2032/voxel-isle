@@ -12,6 +12,7 @@ python3 tests/build.py peers && node tests/peers.test.js         # other players
 python3 tests/build.py boat && node tests/boat.test.js           # boat: craft, board in water, float, speed, shore dismount, shown to other players
 python3 tests/build.py pathing && node tests/pathing.test.js     # crawlers: climb one-block steps, walk around walls instead of stopping
 python3 tests/build.py bed && node tests/bed.test.js             # bed: craft, place, set respawn, sleep through the night, respawn at the bed
+python3 tests/build.py animals && node tests/animals.test.js     # sheep: mesh, drops (mutton + wool), spawning, mutton as food, wool bed
 python3 tests/build.py visual && node tests/visual.shots.js <outdir>   # screenshots: boss at night, farm, ores, HUD (for eyeballing, no assertions)
 ```
 

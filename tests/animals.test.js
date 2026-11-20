@@ -1,0 +1,23 @@
+const { chromium } = require('playwright'); const path=require('path');
+(async()=>{const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium',args:['--use-gl=swiftshader','--enable-webgl','--ignore-gpu-blocklist']});
+let fails=0;const check=(n,ok,x='')=>{if(!ok)fails++;console.log(`${ok?'PASS':'FAIL'}  ${n} ${x}`);};
+const p=await (await b.newContext({viewport:{width:800,height:500}})).newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));p.on('console',m=>{if(m.type()==='error')errs.push('console:'+m.text());});
+await p.goto('file://'+path.resolve(__dirname,'animals-local.html'));await p.waitForTimeout(2500);
+const d=(f,...a)=>p.evaluate(([f,a])=>window.__debug[f](...a),[f,a]);
+await d('play');await d('setTime',0.5);
+check('sheep appended to the peer kind list (indexes unchanged)',JSON.stringify(await d('kinds'))==='["crawler","pig","cow","sheep"]');
+const sh=await d('spawnSheep');check('sheep has a body, 4 legs and 18 HP',sh.legs===4&&sh.hp===18&&sh.kids>=8,JSON.stringify(sh));
+let loot=[];for(let i=0;i<1;i++){loot=await d('kill');}
+check('sheep drop mutton and wool',loot.includes('mutton')&&loot.includes('wool'),JSON.stringify(loot));
+const c=await d('many');console.log('spawned',JSON.stringify(c));
+check('natural spawning produces pigs, cows and sheep',c.pig>0&&c.cow>0&&c.sheep>0);
+await d('setFood','mutton',2);await d('setHunger',5);await d('eat');
+check('mutton restores 7 hunger',Math.abs((await d('hunger'))-12)<0.3&&/"mutton":1/.test(await d('food')),await d('food'));
+check('HUD lists mutton',/Mutton 1/.test(await d('foodLine')||''),await d('foodLine'));
+await d('give','wood',3);await d('give','wool',2);check('wool bed needs 3 wool',(await d('craft','bed_wool'))===false);
+await d('give','wool',3);check('craft a bed from wool',(await d('craft','bed_wool'))===true&&(await d('inv','bed'))>=1&&(await d('inv','wool'))===0);
+await d('give','wool',4);check('stock row lists wool once owned',/Wool 4/.test(await d('stockHas')));
+await d('save');await p.reload();await p.waitForTimeout(2500);
+check('wool and mutton survive a reload',(await d('inv','wool'))===4&&/"mutton":1/.test(await d('food')),await d('food'));
+check('no page/console errors',errs.length===0,errs.slice(0,3).join('|'));
+console.log(fails?'FAILED':'ALL PASSED');await b.close();})();
