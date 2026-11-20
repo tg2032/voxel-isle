@@ -15,6 +15,7 @@ python3 tests/build.py bed && node tests/bed.test.js             # bed: craft, p
 python3 tests/build.py animals && node tests/animals.test.js     # sheep: mesh, drops (mutton + wool), spawning, mutton as food, wool bed
 python3 tests/build.py fishing && node tests/fishing.test.js     # fishing: craft a rod, cast at water, bite window, loot table, fish as food
 python3 tests/build.py ruins && node tests/ruins.test.js         # ruins: 3 crumbled stone enclosures with richer chests, deterministic
+python3 tests/build.py archer && node tests/archer.test.js       # archers: keep bow range, shoot (line of sight), arrows hurt only via the host
 python3 tests/build.py visual && node tests/visual.shots.js <outdir>   # screenshots: boss at night, farm, ores, HUD (for eyeballing, no assertions)
 ```
 

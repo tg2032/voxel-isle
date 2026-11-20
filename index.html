@@ -1923,6 +1923,78 @@ function ensureBoss(mob){
 }
 var lastBossCheck = 0;
 
+/* archers: a crawler variant (recognised by its max health, like the boss, so the synced mob list is unchanged) that keeps its distance and shoots arrows */
+var ARCHER_HP = 36;
+var archerBodyMat = new THREE.MeshLambertMaterial({color:0x8a5a2b, emissive:0x3a2410}), archerHeadMat = new THREE.MeshLambertMaterial({color:0x6e4522, emissive:0x2e1c0c});
+var archerBowMat = new THREE.MeshLambertMaterial({color:0xc9a875, emissive:0x403018});
+function ensureArcher(mob){
+  if(mob.archer || mob.boss || mob.kind !== "crawler" || mob.maxHealth !== ARCHER_HP) return;
+  mob.archer = true;
+  mob.group.traverse(function(o){
+    if(!o.isMesh) return;
+    if(o.material === mobBodyMat || o.material === mobLimbMat) o.material = archerBodyMat;
+    else if(o.material === mobHeadMat) o.material = archerHeadMat;
+  });
+  var arms = mob.group.userData.arms;
+  if(arms && arms[1]){   // a bow in the right hand
+    var bow = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.05), archerBowMat);
+    bow.position.set(0.1, -0.3, 0.14); arms[1].add(bow);
+  }
+}
+var enemyArrows = [];
+function spawnEnemyArrow(x, y, z, vx, vy, vz, simulate){
+  var mesh = makeArrowMesh();
+  mesh.position.set(x, y, z);
+  mesh.lookAt(mesh.position.clone().add(new THREE.Vector3(vx, vy, vz)));
+  scene.add(mesh);
+  enemyArrows.push({mesh:mesh, vel:new THREE.Vector3(vx, vy, vz), born:performance.now(), sim:simulate, dmg:3});
+}
+function updateEnemyArrows(dt, now){
+  for(var i=enemyArrows.length-1; i>=0; i--){
+    var a = enemyArrows[i], dead = false;
+    var steps = Math.max(1, Math.ceil(a.vel.length()*dt/0.3));
+    for(var st=0; st<steps && !dead; st++){
+      a.vel.y -= 4*dt/steps;   // a little drop
+      a.mesh.position.addScaledVector(a.vel, dt/steps);
+      var p = a.mesh.position;
+      if(solidKey(key(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)))){ dead = true; break; }
+      if(!a.sim) continue;   // only the host decides who gets hit; everyone else just sees the arrow
+      if(!player.dead && Math.abs(p.x-player.pos.x) < 0.45 && Math.abs(p.z-player.pos.z) < 0.45 && p.y > player.pos.y && p.y < player.pos.y + 1.8){
+        damagePlayer(a.dmg, a.vel.x, a.vel.z); dead = true; break;
+      }
+      if(net.room){
+        net.room.peers().forEach(function(pe){
+          if(dead || pe.sameTab || pe.kind !== "viewer" || !pe.presence || pe.presence.dead) return;
+          var pr = pe.presence;
+          if(!isFiniteNum(pr.x) || !isFiniteNum(pr.y) || !isFiniteNum(pr.z)) return;
+          if(Math.abs(p.x-pr.x) < 0.45 && Math.abs(p.z-pr.z) < 0.45 && p.y > pr.y && p.y < pr.y + 1.8){
+            net.room.emit("pdmg", {to:pe.peer, amt:a.dmg, dx:Math.round(a.vel.x*100)/100, dz:Math.round(a.vel.z*100)/100}).catch(function(){});
+            dead = true;
+          }
+        });
+      }
+    }
+    if(dead || now - a.born > 3500 || a.mesh.position.y < -5){ scene.remove(a.mesh); enemyArrows.splice(i, 1); }
+  }
+}
+function archerShoot(mob, tg, now){
+  var ox = mob.x, oy = mob.y + 1.4, oz = mob.z;
+  var ty = (tg.y === null || tg.y === undefined ? mob.y : tg.y) + 1.2;
+  var dx = tg.x - ox, dy = ty - oy, dz = tg.z - oz, d = Math.hypot(dx, dy, dz) || 1;
+  var los = Math.ceil(d/0.4);
+  for(var k=1; k<los; k++){   // line of sight: no solid block between the archer and its target (sampled every 0.4 blocks so thin walls cannot slip through)
+    var f = k/los;
+    if(solidKey(key(Math.floor(ox + dx*f), Math.floor(oy + dy*f), Math.floor(oz + dz*f)))) return false;
+  }
+  var sp = 15, jx = (Math.random()-0.5)*0.08, jy = (Math.random()-0.5)*0.08, jz = (Math.random()-0.5)*0.08;
+  var vx = (dx/d + jx)*sp, vy = (dy/d + jy + 0.05)*sp, vz = (dz/d + jz)*sp;
+  spawnEnemyArrow(ox, oy, oz, vx, vy, vz, true);
+  if(net.room) net.room.emit("earrow", {x:Math.round(ox*100)/100, y:Math.round(oy*100)/100, z:Math.round(oz*100)/100, vx:Math.round(vx*100)/100, vy:Math.round(vy*100)/100, vz:Math.round(vz*100)/100}).catch(function(){});
+  sfx.at("bow", ox, oy, oz);
+  mob.lastShot = now;
+  return true;
+}
+
 function actorTargets(){
   var list = [];
   if(!player.dead) list.push({x:player.pos.x, y:player.pos.y, z:player.pos.z, peer:null});
@@ -1954,6 +2026,12 @@ function spawnMob(boss){
     var b = createMob(nextMobId++, x, gy, z, BOSS_HP);
     b.dmg = 7; b.speed = 1.7;
     ensureBoss(b);
+    return;
+  }
+  if(df.nf >= 0.5 && Math.random() < 0.28 && monsters.filter(function(m){ return m.archer; }).length < 2){
+    var ar = createMob(nextMobId++, x, gy, z, ARCHER_HP);
+    ar.dmg = 3; ar.speed *= 0.9 * df.speed;
+    ensureArcher(ar);
     return;
   }
   var mob = createMob(nextMobId++, x, gy, z, df.hp);
@@ -2057,6 +2135,7 @@ function syncMonstersFromHost(dt){
       mob.tx = m[1]; mob.ty = m[2]; mob.tz = m[3]; mob.tr = m[4]; mob.health = m[5];
       mob.maxHealth = isFiniteNum(m[7]) && m[7] > 0 ? m[7] : Math.max(mob.maxHealth, mob.health);
       ensureBoss(mob);
+      ensureArcher(mob);
     });
     monsters.slice().forEach(function(mob){
       if(!seen[mob.id]){
@@ -2245,9 +2324,15 @@ function updateMonsters(dt, now){
     var dxp = tg ? tg.x-mob.x : 0, dzp = tg ? tg.z-mob.z : 0;
     var distToTarget = best;
     var moveX=0, moveZ=0;
-    var chaseRange = mob.cave ? 14 : 9;
+    var chaseRange = mob.cave ? 14 : (mob.archer ? 16 : 9);
     if(tg && now >= (mob.noChaseUntil || 0) && distToTarget < chaseRange && (!mob.cave || tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < 6)){
       moveX = dxp/distToTarget; moveZ = dzp/distToTarget;
+      if(mob.archer){   // stay at bow range: back off when close, circle when in range, close in when far
+        mob.strafeT = (mob.strafeT || 0) - dt;
+        if(mob.strafeT <= 0){ mob.strafe = -(mob.strafe || 1); mob.strafeT = 2 + Math.random()*2; }
+        if(distToTarget < 5){ moveX = -moveX; moveZ = -moveZ; }
+        else if(distToTarget < 9){ var sx2 = -moveZ*mob.strafe, sz2 = moveX*mob.strafe; moveX = sx2; moveZ = sz2; }
+      }
     } else {
       mob.wanderTimer -= dt;
       if(mob.wanderTimer <= 0){
@@ -2286,7 +2371,8 @@ function updateMonsters(dt, now){
     if(moveX||moveZ) mob.group.rotation.y = Math.atan2(moveX,moveZ);
     animateMobLimbs(mob, dt, true);
 
-    if(tg && distToTarget < (mob.boss ? 2.2 : 1.15) && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < (mob.boss ? 3 : 1.8)) && now-mob.lastAttack > (mob.boss ? 1100 : 750)){
+    if(mob.archer && tg && distToTarget < 15 && now - (mob.lastShot || 0) > 2400) archerShoot(mob, tg, now);
+    if(!mob.archer && tg && distToTarget < (mob.boss ? 2.2 : 1.15) && (tg.y === null || tg.y === undefined || Math.abs(tg.y - mob.y) < (mob.boss ? 3 : 1.8)) && now-mob.lastAttack > (mob.boss ? 1100 : 750)){
       mob.lastAttack = now;
       var hitDmg = mob.dmg || CRAWLER_DMG;
       if(tg.peer === null) damagePlayer(hitDmg, dxp, dzp);
@@ -3612,6 +3698,12 @@ chatInputEl.addEventListener("keydown", function(e){
       d.loot.slice(0,4).forEach(function(t){ if(MOB_LOOT.indexOf(t) >= 0 || t === "gold" || t === "diamond" || t === "wool" || Object.prototype.hasOwnProperty.call(FOODS, t)) spawnDrop(t, d.x, d.y+0.6, d.z); });
       if(d.k === 1) recordKill();
     });
+    net.room.on("earrow", function(msg){
+      var d = msg.data;
+      if(msg.isMe || msg.peer !== net.hostPeer || !d) return;
+      if(![d.x, d.y, d.z, d.vx, d.vy, d.vz].every(isFiniteNum) || Math.hypot(d.vx, d.vy, d.vz) > 40 || enemyArrows.length > 30) return;
+      spawnEnemyArrow(d.x, d.y, d.z, d.vx, d.vy, d.vz, false);
+    });
     net.room.on("pdmg", function(msg){
       var d = msg.data;
       if(msg.peer !== net.hostPeer || !d || d.to !== net.myPeer || !isFiniteNum(d.amt)) return;
@@ -3716,7 +3808,7 @@ function updateMinimap(now){
   }
   drops.forEach(function(d){ mmDot(d.mesh.position.x, d.mesh.position.z, 1.4, "#ffd76a"); });
   monsters.forEach(function(m){
-    if(m.kind === "crawler") mmDot(m.x, m.z, m.boss ? 4 : 2.3, m.boss ? "#a43cf0" : "#e5393a", "rgba(0,0,0,0.6)");
+    if(m.kind === "crawler") mmDot(m.x, m.z, m.boss ? 4 : 2.3, m.boss ? "#a43cf0" : (m.archer ? "#f09a3c" : "#e5393a"), "rgba(0,0,0,0.6)");
     else mmDot(m.x, m.z, 2, m.kind === "pig" ? "#f7a8c4" : (m.kind === "sheep" ? "#f2f2f2" : "#d1b48a"), "rgba(0,0,0,0.5)");
   });
   Object.keys(avatars).forEach(function(id){
@@ -4331,6 +4423,7 @@ function animate(){
   updateRain(dt);
   updateMonsters(dt, now);
   updateArrows(dt, now);
+  updateEnemyArrows(dt, now);
   updateDrops(dt, now);
   updateAvatars(dt);
   updateMinimap(now);
