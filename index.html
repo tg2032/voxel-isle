@@ -1849,6 +1849,7 @@ function createMob(id, x, y, z, health, kind){
 }
 
 var bossBodyMat = new THREE.MeshLambertMaterial({color:0x5b2a86, emissive:0x2a1048}), bossHeadMat = new THREE.MeshLambertMaterial({color:0x44206a, emissive:0x220c3c});
+var bossAnnounced = {};
 function ensureBoss(mob){
   if(mob.boss || mob.kind !== "crawler" || mob.maxHealth < BOSS_MIN) return;
   mob.boss = true;
@@ -1858,8 +1859,11 @@ function ensureBoss(mob){
     if(o.material === mobBodyMat || o.material === mobLimbMat) o.material = bossBodyMat;
     else if(o.material === mobHeadMat) o.material = bossHeadMat;
   });
-  showToast("A Night Warden has appeared! Defeat it for gold and diamonds");
-  sfx.play("mobdie");
+  if(!bossAnnounced[mob.id]){   // once per boss, not every time its mesh is rebuilt (host change, resync)
+    bossAnnounced[mob.id] = true;
+    showToast("A Night Warden has appeared! Defeat it for gold and diamonds");
+    sfx.play("mobdie");
+  }
 }
 var lastBossCheck = 0;
 
