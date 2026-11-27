@@ -789,10 +789,14 @@ function updateRain(dt){
   rainMat.opacity = 0.5 * Math.min(1, r*1.3);
 }
 
+var dayNumber = 1, prevDayT = -1, lastClockDay = 0;
 var _sunDir = new THREE.Vector3(), _skyCol = new THREE.Color(), _greyCol = new THREE.Color(), lastClockMin = -1;
 function updateSky(dt){
   dayElapsed = (dayElapsed + dt) % DAY_LENGTH;
   var t = dayElapsed / DAY_LENGTH;              // 0..1 across the day
+  /* the day counter ticks at sunrise (t = 0.25): walking through it, or sleeping past it, both count once */
+  if(prevDayT >= 0 && ((prevDayT < 0.25 && t >= 0.25 && t - prevDayT < 0.5) || (t < prevDayT - 0.5 && t >= 0.25))) dayNumber++;
+  prevDayT = t;
   var angle = t*Math.PI*2 - Math.PI/2;           // sun rises at t=0.25
   var sunHeight = Math.sin(angle);               // -1..1
   var sunDir = _sunDir.set(Math.cos(angle), sunHeight, 0.35).normalize();
@@ -857,9 +861,9 @@ function updateSky(dt){
   /* the clock face only needs touching when the displayed minute changes */
   var hours = (t*24) % 24;
   var hh = Math.floor(hours), mm = Math.floor((hours-hh)*60);
-  if(hh*60+mm !== lastClockMin){
-    lastClockMin = hh*60+mm;
-    clockTimeEl.textContent = (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
+  if(hh*60+mm !== lastClockMin || dayNumber !== lastClockDay){
+    lastClockMin = hh*60+mm; lastClockDay = dayNumber;
+    clockTimeEl.textContent = (touchMode ? "D" + dayNumber + " " : "Day " + dayNumber + "  ") + (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
     var dialAngle = t*Math.PI*2;
     clockSunEl.style.left = (10 + Math.cos(dialAngle)*6 - 4.5)+"px";
     clockSunEl.style.top = (10 - Math.sin(dialAngle)*6 - 4.5)+"px";
@@ -4480,7 +4484,7 @@ function savePlayer(){
   try{
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       inv:inventory, gear:{s:swordTier, a:armorTier, h:shieldTier, p:pickTier, pv:2}, unlocked:unlocked, arrows:arrowCount, food:food, hunger:hunger, hp:player.hp,
-      pos:[player.pos.x, player.pos.y, player.pos.z], yaw:player.yaw, pitch:player.pitch, sel:selected, bed:spawnBed
+      pos:[player.pos.x, player.pos.y, player.pos.z], yaw:player.yaw, pitch:player.pitch, sel:selected, bed:spawnBed, day:dayNumber
     }));
   }catch(e){}
 }
@@ -4512,6 +4516,7 @@ function savePlayer(){
     unlocked.pickaxe = pickTier > 0;
     if(swordTier > 0) unlocked.sword = true;
   }
+  if(Number.isInteger(d.day) && d.day >= 1 && d.day < 100000) dayNumber = d.day;
   if(Array.isArray(d.bed) && d.bed.length === 3 && d.bed.every(Number.isInteger)) spawnBed = d.bed;
   if(d.unlocked){ unlocked.sword = d.unlocked.sword === true; unlocked.bow = d.unlocked.bow === true; }
   arrowCount = Math.floor(num(d.arrows, 0, 9999, 0));

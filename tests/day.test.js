@@ -1,0 +1,22 @@
+const { chromium } = require('playwright'); const path=require('path');
+(async()=>{const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium',args:['--use-gl=swiftshader','--enable-webgl','--ignore-gpu-blocklist']});
+let fails=0;const check=(n,ok,x='')=>{if(!ok)fails++;console.log(`${ok?'PASS':'FAIL'}  ${n} ${x}`);};
+const p=await (await b.newContext({viewport:{width:800,height:500}})).newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.goto('file://'+path.resolve(__dirname,'day-local.html'));await p.waitForTimeout(2500);
+const ev=(code)=>p.evaluate(code);
+// drive updateSky ourselves, stepping time in one evaluate so the game loop cannot interfere
+const run=(steps)=>p.evaluate((steps)=>{const D=window.__debug;const out=[];steps.forEach(s=>{D.setT(s);D.tick(0);out.push(D.day());});return out;},steps);
+await ev(()=>window.__debug.setDay(1));
+let r=await run([0.30,0.35,0.5,0.75,0.99]);check('day does not change during the day and evening',r.every(v=>v===r[0]),JSON.stringify(r));
+const d0=r[0];
+r=await run([0.0,0.1,0.2]);check('midnight does not start a new day',r.every(v=>v===d0),JSON.stringify(r));
+r=await run([0.26]);check('sunrise starts the next day',r[0]===d0+1,JSON.stringify(r));
+r=await run([0.3,0.4]);check('and only once',r.every(v=>v===d0+1));
+r=await run([0.9,0.3]);check('sleeping through the night (evening -> morning) counts one day',r[1]===d0+2,JSON.stringify(r));
+r=await run([0.05,0.3]);check('sleeping after midnight counts one day',r[1]===d0+3,JSON.stringify(r));
+const clock=await ev(()=>{window.__debug.setT(0.51);window.__debug.tick(0);return window.__debug.clock();});
+check('the clock shows the day number',/^Day \d+  \d\d:\d\d$/.test(clock),clock);
+await ev(()=>{window.__debug.setDay(7);window.__debug.save();});await p.reload();await p.waitForTimeout(2500);
+check('the day number survives a reload',(await ev(()=>window.__debug.day()))===7);
+check('no page errors',errs.length===0,errs.join('|'));
+console.log(fails?'FAILED':'ALL PASSED');await b.close();})();
