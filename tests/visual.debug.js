@@ -17,4 +17,5 @@ window.__debug={play:function(){locked=true;syncOverlay();},
  ruinView:function(){var r=worldRuins[0];player.pos.set(r[0]+0.5,r[1]+0.01,r[2]+8.5);player.yaw=0;player.pitch=-0.12;camera.rotation.set(-0.12,0,0,'YXZ');camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);camera.updateMatrixWorld(true);},
  archerScene:function(x,y,z){monsters.slice().forEach(removeMob);var m=createMob(7201,x,y,z,ARCHER_HP,'crawler');m.speed=0;ensureArcher(m);var c=createMob(7202,x+3,y,z,29,'crawler');c.speed=0;monsters.forEach(function(q){q.idle=true;});spawnEnemyArrow(x,y+1.4,z+2,0,0.2,6,false);},
  cabinView:function(){var r=worldCabins[0];player.pos.set(r[0]+0.5,r[1]+7,r[2]+9.5);player.yaw=0;player.pitch=-0.45;camera.rotation.set(-0.45,0,0,'YXZ');camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);camera.updateMatrixWorld(true);},
+ fogNow:function(){weather.timer=1e9;weather.state=4;for(var i=0;i<600;i++)updateWeather(0.1);updateSky(0);},
  freeze:function(){monsters.forEach(function(m){m.speed=0;});}};

@@ -692,11 +692,12 @@ var clockSunEl = document.getElementById("clockSun");
 var currentSunHeight = 1;
 
 /* ---------- weather ---------- */
-var WX_NAMES = ["Clear", "Cloudy", "Rain", "Thunderstorm"];
-var WX_CLOUD = [0, 0.55, 0.85, 1];
-var WX_RAIN  = [0, 0, 0.6, 1];
-var WX_NEXT  = [[0.5,0.5,0,0], [0.35,0.2,0.45,0], [0,0.4,0.35,0.25], [0,0.3,0.7,0]];
-var weather = { state:0, cloud:0, rain:0, flash:0, timer:30, nextStrike:8, sfxT:0 };
+var WX_NAMES = ["Clear", "Cloudy", "Rain", "Thunderstorm", "Fog"];   // append only: the index is what the host sends to peers
+var WX_CLOUD = [0, 0.55, 0.85, 1, 0.6];
+var WX_RAIN  = [0, 0, 0.6, 1, 0];
+var WX_NEXT  = [[0.45,0.45,0,0,0.1], [0.3,0.2,0.4,0,0.1], [0,0.4,0.35,0.25,0], [0,0.3,0.7,0,0], [0.4,0.4,0.2,0,0]];
+var weather = { state:0, cloud:0, rain:0, fog:0, flash:0, timer:30, nextStrike:8, sfxT:0 };
+var FOG_TINT = new THREE.Color();
 var SKY_GREY = new THREE.Color(0x7d8794);
 var FLASH_COL = new THREE.Color(0xf4f7ff);
 var wxPillEl = document.getElementById("wxPill");
@@ -736,6 +737,7 @@ function updateWeather(dt){
   }
   weather.cloud += (WX_CLOUD[weather.state] - weather.cloud) * Math.min(1, dt*0.3);
   weather.rain  += (WX_RAIN[weather.state]  - weather.rain)  * Math.min(1, dt*0.45);
+  weather.fog   += ((weather.state === 4 ? 1 : 0) - weather.fog) * Math.min(1, dt*0.4);
   if(weather.state === 3 && weather.rain > 0.7){
     weather.nextStrike -= dt;
     if(weather.nextStrike <= 0){
@@ -845,6 +847,12 @@ function updateSky(dt){
   var fogF = Math.max(weather.rain, cl*0.35);
   scene.fog.near = 28 - 18*fogF;
   scene.fog.far  = 70 - 30*fogF;
+  if(weather.fog > 0.001){   // fog: a close, grey wall of air (grey at the sky's own brightness, so it is dark at night)
+    var fg = weather.fog, lum = (sky.r + sky.g + sky.b) / 3;
+    sky.lerp(FOG_TINT.setRGB(lum*1.04, lum*1.06, lum*1.1), 0.8*fg);
+    scene.fog.near = scene.fog.near*(1 - 0.85*fg);
+    scene.fog.far  = scene.fog.far*(1 - 0.62*fg);
+  }
   if(caveDark > 0.001){
     var cd = caveDark * CAVE_STRENGTH[caveLevel];
     sky.lerp(CAVE_COL, cd*0.97);
@@ -2180,7 +2188,7 @@ function syncMonstersFromHost(dt){
       }
     });
   }
-  if(pr && isFiniteNum(pr.wx)) weather.state = Math.max(0, Math.min(3, Math.round(pr.wx)));
+  if(pr && isFiniteNum(pr.wx)) weather.state = Math.max(0, Math.min(4, Math.round(pr.wx)));
   if(pr && isFiniteNum(pr.day)){
     var diff = ((pr.day - dayElapsed + DAY_LENGTH*1.5) % DAY_LENGTH) - DAY_LENGTH/2;
     if(Math.abs(diff) > 1) dayElapsed = pr.day;

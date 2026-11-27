@@ -17,6 +17,7 @@ python3 tests/build.py fishing && node tests/fishing.test.js     # fishing: craf
 python3 tests/build.py ruins && node tests/ruins.test.js         # ruins: 3 crumbled stone enclosures with richer chests, deterministic
 python3 tests/build.py archer && node tests/archer.test.js       # archers: keep bow range, shoot (line of sight), arrows hurt only via the host
 python3 tests/build.py day && node tests/day.test.js             # day counter: ticks at sunrise, once per night, survives a reload
+python3 tests/build.py weather && node tests/weather.test.js     # fog weather: closes the view distance, lifts, reachable, indexes unchanged
 python3 tests/build.py ruins && node tests/cabins.test.js        # cabins: wooden shelter with roof, door, torch, bed (sleepable) and a supplies chest
 python3 tests/build.py visual && node tests/visual.shots.js <outdir>   # screenshots: boss at night, farm, ores, HUD (for eyeballing, no assertions)
 ```

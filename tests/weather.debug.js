@@ -1,0 +1,3 @@
+window.__debug={play:function(){locked=true;syncOverlay();},
+ setState:function(n){weather.state=n;}, settle:function(sec){for(var i=0;i<sec*10;i++){updateWeather(0.1);}updateSky(0);return {fog:weather.fog,near:scene.fog.near,far:scene.fog.far,rain:weather.rain};}, names:function(){return WX_NAMES.slice();}, pill:function(){return wxPillEl.hidden?null:wxPillEl.textContent;},
+ setT:function(t){dayElapsed=t*DAY_LENGTH;}, chain:function(){var seen={},s=0;for(var i=0;i<4000;i++){s=pickNextWeather(s);seen[s]=(seen[s]||0)+1;}return seen;}, host:function(){return isHost();}, stopTimer:function(){weather.timer=1e9;}};
