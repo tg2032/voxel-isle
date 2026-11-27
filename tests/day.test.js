@@ -18,5 +18,12 @@ const clock=await ev(()=>{window.__debug.setT(0.51);window.__debug.tick(0);retur
 check('the clock shows the day number',/^Day \d+  \d\d:\d\d$/.test(clock),clock);
 await ev(()=>{window.__debug.setDay(7);window.__debug.save();});await p.reload();await p.waitForTimeout(2500);
 check('the day number survives a reload',(await ev(()=>window.__debug.day()))===7);
+const hp=await ev(()=>{const D=window.__debug;const out={};[1,2,6,11,30,1000].forEach(n=>{D.setDay(n);out[n]=D.hp(1);});return out;});
+console.log('hp by day',JSON.stringify(hp));
+check('day 1 enemies are unchanged (29 HP at midnight)',hp[1]===29,String(hp[1]));
+check('enemies get tougher each day',hp[2]>hp[1]&&hp[6]>hp[2]&&hp[11]>hp[6]);
+check('growth stops at +60% and never reaches boss size',hp[30]===hp[1000]&&hp[1000]<100,JSON.stringify(hp));
+const never36=await ev(()=>{const D=window.__debug;for(let n=1;n<80;n++){D.setDay(n);for(let k=0;k<=10;k++){if(D.hp(k/10)===36)return false;}}return true;});
+check('a normal crawler never has the archer marker (36 HP)',never36);
 check('no page errors',errs.length===0,errs.join('|'));
 console.log(fails?'FAILED':'ALL PASSED');await b.close();})();

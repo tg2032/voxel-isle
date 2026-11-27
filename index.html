@@ -795,7 +795,7 @@ function updateSky(dt){
   dayElapsed = (dayElapsed + dt) % DAY_LENGTH;
   var t = dayElapsed / DAY_LENGTH;              // 0..1 across the day
   /* the day counter ticks at sunrise (t = 0.25): walking through it, or sleeping past it, both count once */
-  if(prevDayT >= 0 && ((prevDayT < 0.25 && t >= 0.25 && t - prevDayT < 0.5) || (t < prevDayT - 0.5 && t >= 0.25))) dayNumber++;
+  if(prevDayT >= 0 && ((prevDayT < 0.25 && t >= 0.25 && t - prevDayT < 0.5) || (t < prevDayT - 0.5 && t >= 0.25))){ dayNumber++; if(toastEl && toastEl.hidden) showToast("Day " + dayNumber + (dayNumber <= 11 ? " \u2014 the nights grow harder" : "")); }
   prevDayT = t;
   var angle = t*Math.PI*2 - Math.PI/2;           // sun rises at t=0.25
   var sunHeight = Math.sin(angle);               // -1..1
@@ -1893,12 +1893,18 @@ function makeAnimalMesh(kind){
 var monsters = [];
 var MAX_MOBS = 10, CRAWLER_HP = 24, CRAWLER_DMG = 4;
 /* enemies scale with how dark it is: weak and few at dusk, strongest and most numerous at midnight */
+/* enemies get tougher by 6% of their base health per day survived (up to +60%); never 36 (the archer's marker) or boss-sized */
+function crawlerHp(nf){
+  var hp = Math.round(CRAWLER_HP * (0.7 + 0.5*nf) * (1 + Math.min(0.6, (dayNumber - 1) * 0.06)));
+  if(hp === ARCHER_HP) hp++;
+  return Math.min(hp, BOSS_MIN - 10);
+}
 function difficulty(){
   var nf = Math.max(0, Math.min(1, -currentSunHeight * 2));      // 0 at the horizon .. 1 at midnight
   if(nf <= 0 && weather.state === 3 && weather.rain > 0.7) nf = 0.25;   // a daytime thunderstorm counts as a mild night
   return {
     nf: nf,
-    hp: Math.round(CRAWLER_HP * (0.7 + 0.5*nf)),
+    hp: crawlerHp(nf),
     dmg: Math.max(1, Math.round(CRAWLER_DMG * (0.75 + 0.5*nf))),
     speed: 0.9 + 0.3*nf,
     cap: Math.round(3 + (MAX_MOBS - 3) * nf),
