@@ -1,6 +1,6 @@
 window.__debug={play:function(){locked=true;syncOverlay();},
  setTime:function(t){dayElapsed=t*DAY_LENGTH;updateSky(0);},
- arena:function(){worldRuins.forEach(function(r){for(var dx=-2;dx<=2;dx++)for(var dz=-2;dz<=2;dz++)for(var y=r[1];y<r[1]+4;y++)if(blockAt.has(key(r[0]+dx,y,r[2]+dz)))removeBlock(r[0]+dx,y,r[2]+dz);});var best=null;for(var x=8;x<34&&!best;x++)for(var z=14;z<36&&!best;z++){var ok=true,hmax=0;for(var dx=-5;dx<=5;dx++)for(var dz=-10;dz<=2;dz++){var h=terrainHeightAt(x+dx,z+dz);if(h<SEA_LEVEL+1)ok=false;if(h>hmax)hmax=h;}if(ok)best=[x,z,hmax];}
+ arena:function(){worldCabins.forEach(function(r){for(var dx=-3;dx<=3;dx++)for(var dz=-3;dz<=3;dz++)for(var y=r[1];y<r[1]+5;y++)if(blockAt.has(key(r[0]+dx,y,r[2]+dz)))removeBlock(r[0]+dx,y,r[2]+dz);});worldRuins.forEach(function(r){for(var dx=-2;dx<=2;dx++)for(var dz=-2;dz<=2;dz++)for(var y=r[1];y<r[1]+4;y++)if(blockAt.has(key(r[0]+dx,y,r[2]+dz)))removeBlock(r[0]+dx,y,r[2]+dz);});var best=null;for(var x=8;x<34&&!best;x++)for(var z=14;z<36&&!best;z++){var ok=true,hmax=0;for(var dx=-5;dx<=5;dx++)for(var dz=-10;dz<=2;dz++){var h=terrainHeightAt(x+dx,z+dz);if(h<SEA_LEVEL+1)ok=false;if(h>hmax)hmax=h;}if(ok)best=[x,z,hmax];}
   if(!best)return null;var X=best[0],Z=best[1],H=best[2];
   for(var dx=-5;dx<=5;dx++)for(var dz=-10;dz<=2;dz++){var top=terrainHeightAt(X+dx,Z+dz);for(var y=top;y<H;y++){if(!blockAt.has(key(X+dx,y,Z+dz)))addBlock('stone',X+dx,y,Z+dz);}
    for(var y2=H;y2<H+3;y2++){if(blockAt.has(key(X+dx,y2,Z+dz)))removeBlock(X+dx,y2,Z+dz);}}

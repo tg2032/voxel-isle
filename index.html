@@ -1285,43 +1285,68 @@ for(var cxx=0; cxx<SIZE; cxx++) for(var czz=0; czz<SIZE; czz++){
     if(hash2(cxx*4.31 + cyy*8.7, czz*6.13 + cyy*2.9) > 0.9) { blockAt.set(key(cxx,cyy,czz), "chest"); worldChestKeys[key(cxx,cyy,czz)] = 1; }
   }
 }
-/* ruins: a few small broken stone enclosures on flat ground, each with a richer treasure chest (placed from hashes only, so the tree layout and every client's world are unchanged) */
-var worldRuins = [];
+/* buildings: ruins and cabins are 5x5 sites on levelled ground, placed from hashes only (so the tree layout and every client's world are unchanged) */
+var worldRuins = [], worldCabins = [];
+function findBuildSite(i, salt, taken, gap, maxRange){
+  var ax = 4 + Math.floor(hash2(i*7.13 + 1.7 + salt, 3.3 + salt) * (SIZE-9)), az = 4 + Math.floor(hash2(i*5.31 + 9.1 + salt, 8.8 + salt) * (SIZE-9));
+  if(Math.hypot(ax+2 - SIZE/2, az+2 - SIZE/2) <= 8) return null;
+  for(var q=0; q<taken.length; q++) if(Math.hypot(taken[q][0]-(ax+2), taken[q][2]-(az+2)) < gap) return null;
+  var lo = 99, hi = 0, hs = [];
+  for(var dx=-1; dx<=5; dx++) for(var dz=-1; dz<=5; dz++){
+    var hh = heightMap[(ax+dx)*SIZE+(az+dz)];
+    if(hh < SEA_LEVEL + 2) return null;
+    lo = Math.min(lo, hh); hi = Math.max(hi, hh); hs.push(hh);
+    var inside = dx >= 0 && dx <= 4 && dz >= 0 && dz <= 4;
+    for(var dy=0; dy<(inside ? 4 : 1); dy++) if(blockAt.has(key(ax+dx, hh+dy, az+dz))) return null;   // no trees where the walls go, and no trunk on the levelled margin
+  }
+  if(hi - lo > (maxRange || 3)) return null;
+  hs.sort(function(a,b){ return a-b; });
+  var base = hs[Math.floor(hs.length/2)];
+  for(var fx=-1; fx<=5; fx++) for(var fz=-1; fz<=5; fz++){   // level the site to its median height
+    var cx = ax+fx, cz = az+fz, cur = heightMap[cx*SIZE+cz];
+    for(var y1=cur-1; y1>=base; y1--) blockAt.delete(key(cx, y1, cz));
+    for(var y2=cur; y2<base; y2++) blockAt.set(key(cx, y2, cz), y2 === base-1 ? "grass" : "dirt");
+    if(cur < base) blockAt.set(key(cx, cur-1, cz), "dirt");
+    if(cur > base) blockAt.set(key(cx, base-1, cz), "grass");
+    heightMap[cx*SIZE+cz] = base;
+  }
+  return {ax:ax, az:az, base:base, door:Math.floor(hash2(i*2.9 + salt, 6.1) * 4)};
+}
+function isDoorCell(door, wx, wz){ return (door===0 && wz===0 && wx===2) || (door===1 && wz===4 && wx===2) || (door===2 && wx===0 && wz===2) || (door===3 && wx===4 && wz===2); }
 (function buildRuins(){
   for(var i=0; i<4000 && worldRuins.length<3; i++){
-    var ax = 4 + Math.floor(hash2(i*7.13 + 1.7, 3.3) * (SIZE-9)), az = 4 + Math.floor(hash2(i*5.31 + 9.1, 8.8) * (SIZE-9));
-    var ok = Math.hypot(ax+2 - SIZE/2, az+2 - SIZE/2) > 8, lo = 99, hi = 0, hs = [];
-    for(var q=0; q<worldRuins.length && ok; q++) if(Math.hypot(worldRuins[q][0]-ax, worldRuins[q][2]-az) < 14) ok = false;
-    for(var dx=-1; dx<=5 && ok; dx++) for(var dz=-1; dz<=5 && ok; dz++){
-      var hh = heightMap[(ax+dx)*SIZE+(az+dz)];
-      if(hh < SEA_LEVEL + 2){ ok = false; break; }
-      lo = Math.min(lo, hh); hi = Math.max(hi, hh); hs.push(hh);
-      var inside = dx >= 0 && dx <= 4 && dz >= 0 && dz <= 4;
-      for(var dy=0; dy<(inside ? 4 : 1) && ok; dy++) if(blockAt.has(key(ax+dx, hh+dy, az+dz))) ok = false;   // no trees where the walls go, and no trunk on the levelled margin
-    }
-    if(!ok || hi - lo > 3) continue;
-    hs.sort(function(a,b){ return a-b; });
-    var base = hs[Math.floor(hs.length/2)];
-    for(var fx=-1; fx<=5; fx++) for(var fz=-1; fz<=5; fz++){   // level the site to its median height
-      var cx = ax+fx, cz = az+fz, cur = heightMap[cx*SIZE+cz];
-      for(var y1=cur-1; y1>=base; y1--) blockAt.delete(key(cx, y1, cz));
-      for(var y2=cur; y2<base; y2++) blockAt.set(key(cx, y2, cz), y2 === base-1 ? "grass" : "dirt");
-      if(cur < base) blockAt.set(key(cx, cur-1, cz), "dirt");
-      if(cur > base) blockAt.set(key(cx, base-1, cz), "grass");
-      heightMap[cx*SIZE+cz] = base;
-    }
-    var door = Math.floor(hash2(i*2.9, 6.1) * 4);   // which side has the gap
+    var st = findBuildSite(i, 0, worldRuins, 14);
+    if(!st) continue;
     for(var wx=0; wx<5; wx++) for(var wz=0; wz<5; wz++){
-      if(!(wx===0 || wx===4 || wz===0 || wz===4)) continue;
+      if(!(wx===0 || wx===4 || wz===0 || wz===4) || isDoorCell(st.door, wx, wz)) continue;
       var corner = (wx===0 || wx===4) && (wz===0 || wz===4);
-      var isDoor = (door===0 && wz===0 && wx===2) || (door===1 && wz===4 && wx===2) || (door===2 && wx===0 && wz===2) || (door===3 && wx===4 && wz===2);
-      if(isDoor) continue;
-      var hgt = corner ? 3 : (hash2((ax+wx)*3.1, (az+wz)*4.7) > 0.45 ? 2 : 1);   // crumbled walls
-      for(var h2=0; h2<hgt; h2++) blockAt.set(key(ax+wx, base+h2, az+wz), "stone");
+      var hgt = corner ? 3 : (hash2((st.ax+wx)*3.1, (st.az+wz)*4.7) > 0.45 ? 2 : 1);   // crumbled walls
+      for(var h2=0; h2<hgt; h2++) blockAt.set(key(st.ax+wx, st.base+h2, st.az+wz), "stone");
     }
-    var ck = key(ax+2, base, az+2);
+    var ck = key(st.ax+2, st.base, st.az+2);
     blockAt.set(ck, "chest"); worldChestKeys[ck] = 2;
-    worldRuins.push([ax+2, base, az+2]);
+    worldRuins.push([st.ax+2, st.base, st.az+2]);
+  }
+})();
+/* cabins: a wooden shelter with a roof, a door gap, a torch, a bed and a chest of basic supplies */
+(function buildCabins(){
+  var taken = worldRuins.slice();
+  for(var i=0; i<4000 && worldCabins.length<2; i++){
+    var st = findBuildSite(i, 57.3, taken, 8, 6);
+    if(!st) continue;
+    for(var wx=0; wx<5; wx++) for(var wz=0; wz<5; wz++){
+      var edge = wx===0 || wx===4 || wz===0 || wz===4;
+      for(var h2=0; h2<3; h2++){
+        if(edge && !(isDoorCell(st.door, wx, wz) && h2 < 2)) blockAt.set(key(st.ax+wx, st.base+h2, st.az+wz), "wood");
+      }
+      blockAt.set(key(st.ax+wx, st.base+3, st.az+wz), "wood");   // roof
+    }
+    var chestKey = key(st.ax+1, st.base, st.az+1);
+    blockAt.set(chestKey, "chest"); worldChestKeys[chestKey] = 3;
+    blockAt.set(key(st.ax+3, st.base, st.az+3), "bed");
+    blockAt.set(key(st.ax+3, st.base, st.az+1), "torch");
+    var site = [st.ax+2, st.base, st.az+2];
+    worldCabins.push(site); taken.push(site);
   }
 })();
 var waterCells = [];
@@ -2633,9 +2658,11 @@ function applyRemoteChest(d){
   if(chestOpen && chestCur === d.k) renderChest();
 }
 function chestRand(x,y,z,n){ return hash2(x*12.9898 + y*78.233 + n*37.719, z*4.1414 + n*11.13); }
-function lootFor(x,y,z,rich){
+function lootFor(x,y,z,kind){
   var loot = { gold: 2 + Math.floor(chestRand(x,y,z,1)*5), torch: 3 + Math.floor(chestRand(x,y,z,2)*6), arrows: 4 + Math.floor(chestRand(x,y,z,3)*8) };
   if(chestRand(x,y,z,4) > 0.5) loot.diamond = 1 + Math.floor(chestRand(x,y,z,5)*2);
+  var rich = kind === 2;
+  if(kind === 3) return { wood: 6 + Math.floor(chestRand(x,y,z,8)*5), torch: 4, arrows: 6 + Math.floor(chestRand(x,y,z,9)*6), apple: 1, gold: 1 };   // cabin chest: basic supplies
   if(rich){   // ruin chests: more of everything, plus emeralds and golden apples
     loot.gold += 6; loot.diamond = (loot.diamond || 0) + 2; loot.emerald = 2 + Math.floor(chestRand(x,y,z,6)*3); loot.apple = 1 + Math.floor(chestRand(x,y,z,7)*2);
   }
@@ -2644,7 +2671,7 @@ function lootFor(x,y,z,rich){
 function chestContents(k){
   if(!chestData[k]){
     var parts = k.split(",");
-    chestData[k] = worldChestKeys[k] ? lootFor(+parts[0], +parts[1], +parts[2], worldChestKeys[k] === 2) : {};
+    chestData[k] = worldChestKeys[k] ? lootFor(+parts[0], +parts[1], +parts[2], worldChestKeys[k]) : {};
     delete worldChestKeys[k];     // from now on it is an ordinary chest with whatever is left in it
     saveChests();
     pushChest(k);                 // claim it in the shared db so other players see the same loot
